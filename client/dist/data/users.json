@@ -1,0 +1,1 @@
+{"users":[{"id":1,"name":"Admin User","username":"admin","pin":"1234","userRole":"admin","lastActive":"2025-07-07T03:01:46.836Z","status":"active"},{"id":2,"name":"Sarah Johnson","username":"sarah","pin":"5678","userRole":"cashier","lastActive":"2025-07-07T03:01:46.836Z","status":"active"}]}

@@ -33,8 +33,12 @@ call :log "Starting Inventory Pro Launcher"
 echo [1/6] Checking Node.js installation...
 call :check_nodejs
 if !errorlevel! neq 0 (
-    call :log "Node.js installation failed"
+    echo   ✗ Node.js installation or verification failed
+    call :log "Node.js installation or verification failed"
     goto :error_exit
+) else (
+    echo   ✓ Node.js installation verified successfully
+    call :log "Node.js installation verified successfully"
 )
 
 echo [2/6] Installing Node.js modules...
@@ -82,36 +86,56 @@ goto :end
 call :log "Checking Node.js installation"
 echo   Checking for Node.js...
 
+:: Check if Node.js is installed
 node --version >nul 2>&1
 if !errorlevel! equ 0 (
     for /f "tokens=*" %%i in ('node --version') do set "NODE_VERSION=%%i"
     echo   ✓ Node.js found: !NODE_VERSION!
     call :log "Node.js found: !NODE_VERSION!"
-    goto :check_npm
-)
-
-echo   ✗ Node.js not found
-call :log "Node.js not found, checking for bundled installer"
-echo   Looking for bundled Node.js installer...
-
-if exist "%SCRIPT_DIR%!NODE_INSTALLER!" (
-    echo   ✓ Found bundled installer: !NODE_INSTALLER!
-    call :log "Found bundled installer: !NODE_INSTALLER!"
-    call :install_nodejs
-    if !errorlevel! neq 0 exit /b 1
+    
+    :: Validate Node.js version (require v16 or higher)
+    call :validate_node_version "!NODE_VERSION!"
+    if !errorlevel! neq 0 (
+        echo   ⚠ Node.js version !NODE_VERSION! may be incompatible (require v16+)
+        call :log "Node.js version !NODE_VERSION! may be incompatible"
+    ) else (
+        echo   ✓ Node.js version !NODE_VERSION! is compatible
+        call :log "Node.js version !NODE_VERSION! is compatible"
+    )
+    
+    :: Check npm availability
+    call :check_npm
+    exit /b !errorlevel!
 ) else (
-    echo   ✗ No bundled installer found
-    call :log "No bundled installer found"
-    call :download_nodejs
-    if !errorlevel! neq 0 exit /b 1
+    echo   ✗ Node.js not found
+    call :log "Node.js not found, checking for bundled installer"
+    echo   Looking for bundled Node.js installer...
+
+    if exist "%SCRIPT_DIR%!NODE_INSTALLER!" (
+        echo   ✓ Found bundled installer: !NODE_INSTALLER!
+        call :log "Found bundled installer: !NODE_INSTALLER!"
+        call :install_nodejs
+        if !errorlevel! neq 0 exit /b 1
+    ) else (
+        echo   ✗ No bundled installer found
+        call :log "No bundled installer found"
+        call :download_nodejs
+        if !errorlevel! neq 0 exit /b 1
+    )
+    
+    :: After installation, check npm
+    call :check_npm
+    exit /b !errorlevel!
 )
 
 :check_npm
+call :log "Checking npm installation"
 npm --version >nul 2>&1
 if !errorlevel! equ 0 (
     for /f "tokens=*" %%i in ('npm --version') do set "NPM_VERSION=%%i"
     echo   ✓ npm found: !NPM_VERSION!
     call :log "npm found: !NPM_VERSION!"
+    call :log "Node.js and npm verification successful"
     exit /b 0
 ) else (
     echo   ✗ npm not found after Node.js installation
@@ -128,11 +152,20 @@ echo   Installing Node.js...
 echo   Please wait, this may take a few minutes...
 
 start /wait msiexec /i "%SCRIPT_DIR%!NODE_INSTALLER!" /quiet /norestart
+set "INSTALL_EXIT_CODE=!errorlevel!"
+
+if !INSTALL_EXIT_CODE! neq 0 (
+    echo   ✗ Node.js installation failed with exit code !INSTALL_EXIT_CODE!
+    call :log "Node.js installation failed with exit code !INSTALL_EXIT_CODE!"
+    exit /b 1
+)
 
 :: Refresh environment variables
 call :refresh_env
 
 :: Verify installation
+echo   Verifying Node.js installation...
+call :log "Verifying Node.js installation"
 timeout /t 5 >nul
 node --version >nul 2>&1
 if !errorlevel! equ 0 (
@@ -141,7 +174,7 @@ if !errorlevel! equ 0 (
     call :log "Node.js installed successfully: !NODE_VERSION!"
     exit /b 0
 ) else (
-    echo   ✗ Node.js installation failed
+    echo   ✗ Node.js installation verification failed
     call :log "Node.js installation verification failed"
     exit /b 1
 )
@@ -477,6 +510,23 @@ goto :eof
 :refresh_env
 :: Refresh environment variables
 for /f "tokens=*" %%i in ('powershell -Command "[Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH', 'User')"') do set "PATH=%%i"
+goto :eof
+
+:validate_node_version
+:: Validate Node.js version (require v16 or higher)
+set "VERSION_STR=%~1"
+:: Remove 'v' prefix if present
+set "VERSION_STR=!VERSION_STR:v=!"
+:: Extract major version number
+for /f "tokens=1 delims=." %%a in ("!VERSION_STR!") do set "MAJOR_VERSION=%%a"
+:: Check if major version is 16 or higher
+if !MAJOR_VERSION! geq 16 (
+    call :log "Node.js version validation passed: v!MAJOR_VERSION! >= v16"
+    exit /b 0
+) else (
+    call :log "Node.js version validation failed: v!MAJOR_VERSION! < v16"
+    exit /b 1
+)
 goto :eof
 
 :end

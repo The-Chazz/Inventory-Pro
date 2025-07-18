@@ -65,7 +65,7 @@ goto :end
 call :log "Testing Node.js version validation"
 echo   Testing Node.js version validation...
 
-set "test_versions=v16.0.0 v18.19.0 v20.19.3 v24.3.0 v25.0.0 v14.0.0 v15.9.0"
+set "test_versions=v16.0.0 v18.19.0 v20.19.3 v24.3.0 v25.0.0 v26.0.0 v14.0.0 v15.9.0"
 set "passed_tests=0"
 set "total_tests=0"
 
@@ -74,12 +74,17 @@ for %%v in (%test_versions%) do (
     echo     Testing version: %%v
     call :validate_node_version "%%v"
     if !errorlevel! equ 0 (
-        echo       ✓ Version %%v is COMPATIBLE
-        call :log "Version %%v is COMPATIBLE"
-        set /a "passed_tests+=1"
+        if "!NODE_VERSION_OK!"=="1" (
+            echo       ✓ Version %%v is COMPATIBLE (NODE_VERSION_OK=1)
+            call :log "Version %%v is COMPATIBLE (NODE_VERSION_OK=1)"
+            set /a "passed_tests+=1"
+        ) else (
+            echo       ✗ Version %%v validation failed (NODE_VERSION_OK=!NODE_VERSION_OK!)
+            call :log "Version %%v validation failed (NODE_VERSION_OK=!NODE_VERSION_OK!)"
+        )
     ) else (
-        echo       ✗ Version %%v is INCOMPATIBLE
-        call :log "Version %%v is INCOMPATIBLE"
+        echo       ✗ Version %%v is INCOMPATIBLE (exit code !errorlevel!)
+        call :log "Version %%v is INCOMPATIBLE (exit code !errorlevel!)"
         if "%%v"=="v24.3.0" (
             echo       ⚠ ERROR: v24.3.0 should be compatible!
             call :log "ERROR: v24.3.0 should be compatible!"
@@ -180,39 +185,80 @@ echo.
 goto :eof
 
 :: Include the improved validation functions from Launcher.bat
-:validate_node_version
-:: Validate Node.js version (require v16 or higher)
-set "VERSION_STR=%~1"
-call :log "Validating Node.js version: %VERSION_STR%"
+:check_version
+set "version=%~1"
+call :log "Checking version: %version%"
 
 :: Handle empty version string
-if "!VERSION_STR!"=="" (
+if "!version!"=="" (
     call :log "Empty version string provided"
+    set "NODE_VERSION_OK=0"
     exit /b 1
 )
 
 :: Remove 'v' prefix if present
-set "VERSION_STR=!VERSION_STR:v=!"
-call :log "Version string after removing v prefix: !VERSION_STR!"
+set "version=!version:v=!"
+call :log "Version string after removing v prefix: !version!"
 
-:: Extract major version number - handle edge cases
-for /f "tokens=1 delims=." %%a in ("!VERSION_STR!") do set "MAJOR_VERSION=%%a"
+:: Parse version into major, minor, patch
+for /f "tokens=1,2,3 delims=." %%a in ("!version!") do (
+    set "major=%%a"
+    set "minor=%%b"
+    set "patch=%%c"
+)
 
-:: Validate that we got a numeric major version
-echo !MAJOR_VERSION! | findstr /r "^[0-9][0-9]*$" >nul
+:: Validate major version is numeric
+echo !major! | findstr /r "^[0-9][0-9]*$" >nul
 if !errorlevel! neq 0 (
-    call :log "Invalid major version format: !MAJOR_VERSION!"
+    call :log "Invalid major version format: !major!"
+    set "NODE_VERSION_OK=0"
     exit /b 1
 )
 
-call :log "Extracted major version: !MAJOR_VERSION!"
+call :log "Parsed version - Major: !major!, Minor: !minor!, Patch: !patch!"
 
-:: Check if major version is 16 or higher
-if !MAJOR_VERSION! geq 16 (
-    call :log "Node.js version validation passed: v!MAJOR_VERSION! >= v16"
-    exit /b 0
+:: Version compatibility check
+set "MIN_MAJOR=16"
+set "MAX_MAJOR=24"
+
+if !major! geq !MIN_MAJOR! (
+    if !major! leq !MAX_MAJOR! (
+        echo [%date% %time%] Node.js version !version! is compatible
+        call :log "Node.js version !version! is compatible"
+        set "NODE_VERSION_OK=1"
+    ) else (
+        echo [%date% %time%] Warning: Node.js version !version! is newer than recommended
+        call :log "Warning: Node.js version !version! is newer than recommended"
+        set "NODE_VERSION_OK=1"
+    )
 ) else (
-    call :log "Node.js version validation failed: v!MAJOR_VERSION! < v16"
+    echo [%date% %time%] Warning: Node.js version !version! is older than recommended
+    call :log "Warning: Node.js version !version! is older than recommended"
+    set "NODE_VERSION_OK=1"
+)
+
+exit /b 0
+
+:validate_node_version
+:: Validate Node.js version using improved check_version function
+set "VERSION_STR=%~1"
+call :log "Validating Node.js version: %VERSION_STR%"
+
+:: Use the new check_version function
+call :check_version "%VERSION_STR%"
+set "CHECK_RESULT=!errorlevel!"
+
+:: Return the result and NODE_VERSION_OK status
+if !CHECK_RESULT! equ 0 (
+    if "!NODE_VERSION_OK!"=="1" (
+        call :log "Node.js version validation passed with NODE_VERSION_OK=1"
+        exit /b 0
+    ) else (
+        call :log "Node.js version validation failed with NODE_VERSION_OK=!NODE_VERSION_OK!"
+        exit /b 1
+    )
+) else (
+    call :log "Node.js version validation failed with exit code !CHECK_RESULT!"
     exit /b 1
 )
 goto :eof

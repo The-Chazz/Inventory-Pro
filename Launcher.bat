@@ -94,29 +94,55 @@ goto :end
 :: ============================
 :: Function: Check Node.js
 :: ============================
-:check_nodejs
+::check_nodejs
 call :log "Checking Node.js installation"
 echo   Checking for Node.js...
 
 :: Check if Node.js is installed
 node --version >nul 2>&1
-if !errorlevel! equ 0 (
-    for /f "tokens=*" %%i in ('node --version') do set "NODE_VERSION=%%i"
-    echo   ✓ Node.js found: !NODE_VERSION!
-    call :log "Node.js found: !NODE_VERSION!"
-    
-    :: Validate Node.js version (require v16 or higher, but allow newer versions)
-    call :validate_node_version "!NODE_VERSION!"
-    set "VERSION_CHECK_RESULT=!errorlevel!"
-    if !VERSION_CHECK_RESULT! neq 0 (
-        echo   ⚠ Node.js version !NODE_VERSION! is below recommended minimum (v16+)
-        echo   ⚠ The application may not work correctly, but will continue anyway
-        call :log "Node.js version !NODE_VERSION! below recommended minimum v16, continuing"
+set "NODE_CMD_RESULT=!errorlevel!"
+if !NODE_CMD_RESULT! equ 0 (
+    for /f "tokens=*" %%i in ('node --version 2^>nul') do set "NODE_VERSION=%%i"
+    if defined NODE_VERSION (
+        echo   ✓ Node.js found: !NODE_VERSION!
+        call :log "Node.js found: !NODE_VERSION!"
+        
+        :: Validate Node.js version using improved function
+        call :validate_node_version "!NODE_VERSION!"
+        set "VERSION_CHECK_RESULT=!errorlevel!"
+        if !VERSION_CHECK_RESULT! neq 0 (
+            echo   ⚠ Node.js version !NODE_VERSION! validation failed
+            echo   ⚠ The application may not work correctly, but will continue anyway
+            call :log "Node.js version !NODE_VERSION! validation failed, continuing"
+        ) else (
+            echo   ✓ Node.js version !NODE_VERSION! is compatible
+            call :log "Node.js version !NODE_VERSION! is compatible"
+        )
+        
+        :: Verify Node.js path
+        where node >nul 2>&1
+        if !errorlevel! equ 0 (
+            for /f "tokens=*" %%a in ('where node 2^>nul') do (
+                set "NODE_PATH=%%a"
+                echo   ✓ Node.js path verified: !NODE_PATH!
+                call :log "Node.js path verified: !NODE_PATH!"
+            )
+        ) else (
+            echo   ⚠ Node.js path verification failed
+            call :log "Node.js path verification failed"
+        )
     ) else (
-        echo   ✓ Node.js version !NODE_VERSION! is compatible
-        call :log "Node.js version !NODE_VERSION! is compatible"
+        echo   ✗ Node.js command succeeded but version not detected
+        call :log "Node.js command succeeded but version not detected"
+        set "NODE_CMD_RESULT=1"
     )
-    
+) else (
+    echo   ✗ Node.js not found (exit code: !NODE_CMD_RESULT!)
+    call :log "Node.js not found with exit code: !NODE_CMD_RESULT!"
+)
+
+:: If Node.js is available, check npm
+if !NODE_CMD_RESULT! equ 0 (
     :: Check npm availability (critical for functionality)
     call :check_npm
     set "NPM_CHECK_RESULT=!errorlevel!"
@@ -634,6 +660,63 @@ goto :end
 echo [%DATE% %TIME%] %~1 >> "%LOG_FILE%"
 goto :eof
 
+:: ============================
+:: Function: Check Version
+:: ============================
+:check_version
+set "version=%~1"
+call :log "Checking version: %version%"
+
+:: Handle empty version string
+if "!version!"=="" (
+    call :log "Empty version string provided"
+    set "NODE_VERSION_OK=0"
+    exit /b 1
+)
+
+:: Remove 'v' prefix if present
+set "version=!version:v=!"
+call :log "Version string after removing v prefix: !version!"
+
+:: Parse version into major, minor, patch
+for /f "tokens=1,2,3 delims=." %%a in ("!version!") do (
+    set "major=%%a"
+    set "minor=%%b"
+    set "patch=%%c"
+)
+
+:: Validate major version is numeric
+echo !major! | findstr /r "^[0-9][0-9]*$" >nul
+if !errorlevel! neq 0 (
+    call :log "Invalid major version format: !major!"
+    set "NODE_VERSION_OK=0"
+    exit /b 1
+)
+
+call :log "Parsed version - Major: !major!, Minor: !minor!, Patch: !patch!"
+
+:: Version compatibility check
+set "MIN_MAJOR=16"
+set "MAX_MAJOR=24"
+
+if !major! geq !MIN_MAJOR! (
+    if !major! leq !MAX_MAJOR! (
+        echo [%date% %time%] Node.js version !version! is compatible
+        call :log "Node.js version !version! is compatible"
+        set "NODE_VERSION_OK=1"
+    ) else (
+        echo [%date% %time%] Warning: Node.js version !version! is newer than recommended
+        call :log "Warning: Node.js version !version! is newer than recommended"
+        set "NODE_VERSION_OK=1"
+    )
+) else (
+    echo [%date% %time%] Warning: Node.js version !version! is older than recommended
+    call :log "Warning: Node.js version !version! is older than recommended"
+    set "NODE_VERSION_OK=1"
+)
+
+exit /b 0
+
 :refresh_env
 :: Refresh environment variables
 call :log "Refreshing environment variables"
@@ -656,43 +739,58 @@ if defined MACHINE_PATH (
     )
 )
 
+:: Refresh environment variables specific to Node.js
+echo [%date% %time%] Refreshing environment variables
+call :log "Refreshing Node.js environment variables"
+
+:: Find Node.js path and update environment
+for /f "tokens=*" %%a in ('where node 2^>nul') do (
+    set "NODE_PATH=%%a"
+    call :log "Found Node.js at: !NODE_PATH!"
+    
+    :: Get the directory containing node.exe
+    for %%i in ("!NODE_PATH!") do set "NODE_DIR=%%~dpi"
+    set "NODE_DIR=!NODE_DIR:~0,-1!"
+    
+    :: Update PATH if not already included
+    echo !PATH! | findstr /i "!NODE_DIR!" >nul || (
+        set "PATH=!PATH!;!NODE_DIR!"
+        call :log "Added Node.js directory to PATH: !NODE_DIR!"
+    )
+)
+
+if defined NODE_PATH (
+    echo [%date% %time%] Node.js path: !NODE_PATH!
+    call :log "Node.js path updated: !NODE_PATH!"
+) else (
+    echo [%date% %time%] Warning: Node.js path not found
+    call :log "Warning: Node.js path not found during environment refresh"
+)
+
 call :log "Environment variables refreshed"
 call :log "Updated PATH: !PATH!"
 goto :eof
 
 :validate_node_version
-:: Validate Node.js version (require v16 or higher)
+:: Validate Node.js version using improved check_version function
 set "VERSION_STR=%~1"
 call :log "Validating Node.js version: %VERSION_STR%"
 
-:: Handle empty version string
-if "!VERSION_STR!"=="" (
-    call :log "Empty version string provided"
-    exit /b 1
-)
+:: Use the new check_version function
+call :check_version "%VERSION_STR%"
+set "CHECK_RESULT=!errorlevel!"
 
-:: Remove 'v' prefix if present
-set "VERSION_STR=!VERSION_STR:v=!"
-call :log "Version string after removing v prefix: !VERSION_STR!"
-
-:: Extract major version number - handle edge cases
-for /f "tokens=1 delims=." %%a in ("!VERSION_STR!") do set "MAJOR_VERSION=%%a"
-
-:: Validate that we got a numeric major version
-echo !MAJOR_VERSION! | findstr /r "^[0-9][0-9]*$" >nul
-if !errorlevel! neq 0 (
-    call :log "Invalid major version format: !MAJOR_VERSION!"
-    exit /b 1
-)
-
-call :log "Extracted major version: !MAJOR_VERSION!"
-
-:: Check if major version is 16 or higher
-if !MAJOR_VERSION! geq 16 (
-    call :log "Node.js version validation passed: v!MAJOR_VERSION! >= v16"
-    exit /b 0
+:: Return the result and NODE_VERSION_OK status
+if !CHECK_RESULT! equ 0 (
+    if "!NODE_VERSION_OK!"=="1" (
+        call :log "Node.js version validation passed with NODE_VERSION_OK=1"
+        exit /b 0
+    ) else (
+        call :log "Node.js version validation failed with NODE_VERSION_OK=!NODE_VERSION_OK!"
+        exit /b 1
+    )
 ) else (
-    call :log "Node.js version validation failed: v!MAJOR_VERSION! < v16"
+    call :log "Node.js version validation failed with exit code !CHECK_RESULT!"
     exit /b 1
 )
 goto :eof

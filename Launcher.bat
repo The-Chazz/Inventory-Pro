@@ -2,8 +2,8 @@
 setlocal enabledelayedexpansion
 
 :: Inventory Pro Launcher Script
-:: This script automates the installation, setup, and service configuration of Inventory-Pro
-:: Requirements: Windows 10/11, Internet connection for Node.js download (if needed)
+:: This script automates the setup and service configuration of Inventory-Pro
+:: Requirements: Windows 10/11, Node.js pre-installed on the system
 
 title Inventory Pro Launcher
 color 0B
@@ -19,7 +19,6 @@ echo.
 cd /d "%~dp0"
 set "SCRIPT_DIR=%~dp0"
 set "LOG_FILE=%SCRIPT_DIR%launcher.log"
-set "NODE_INSTALLER=node-installer.msi"
 set "APP_NAME=inventory-pro"
 set "APP_PORT=5000"
 set "APP_URL=http://localhost:%APP_PORT%"
@@ -34,19 +33,8 @@ echo [1/6] Checking Node.js installation...
 call :check_nodejs
 set "NODE_CHECK_RESULT=!errorlevel!"
 if !NODE_CHECK_RESULT! neq 0 (
-    echo   ✗ Node.js installation or verification failed
-    call :log "Node.js installation or verification failed with exit code !NODE_CHECK_RESULT!"
-    
-    :: Provide specific troubleshooting suggestions
-    echo.
-    echo   Troubleshooting suggestions:
-    echo   1. Run this script as Administrator
-    echo   2. Check your internet connection
-    echo   3. Ensure Windows Defender/Antivirus is not blocking the installation
-    echo   4. Try placing a Node.js installer named 'node-installer.msi' in this directory
-    echo   5. Check the log file for more details: %LOG_FILE%
-    echo.
-    
+    echo   ✗ Node.js not found or not functional
+    call :log "Node.js check failed with exit code !NODE_CHECK_RESULT!"
     goto :error_exit
 ) else (
     echo   ✓ Node.js installation verified successfully
@@ -98,82 +86,70 @@ goto :end
 call :log "Checking Node.js installation"
 echo   Checking for Node.js...
 
-:: Check if Node.js is installed
+:: Check if Node.js is installed using where command
+where node >nul 2>&1
+set "WHERE_NODE_RESULT=!errorlevel!"
+
+:: Check if Node.js is functional using version command
 node --version >nul 2>&1
 set "NODE_CMD_RESULT=!errorlevel!"
-if !NODE_CMD_RESULT! equ 0 (
-    for /f "tokens=*" %%i in ('node --version 2^>nul') do set "NODE_VERSION=%%i"
-    if defined NODE_VERSION (
-        echo   ✓ Node.js found: !NODE_VERSION!
-        call :log "Node.js found: !NODE_VERSION!"
-        
-        :: Validate Node.js version using improved function
-        call :validate_node_version "!NODE_VERSION!"
-        set "VERSION_CHECK_RESULT=!errorlevel!"
-        if !VERSION_CHECK_RESULT! neq 0 (
-            echo   ⚠ Node.js version !NODE_VERSION! validation failed
-            echo   ⚠ The application may not work correctly, but will continue anyway
-            call :log "Node.js version !NODE_VERSION! validation failed, continuing"
-        ) else (
-            echo   ✓ Node.js version !NODE_VERSION! is compatible
-            call :log "Node.js version !NODE_VERSION! is compatible"
-        )
-        
-        :: Verify Node.js path
-        where node >nul 2>&1
-        if !errorlevel! equ 0 (
+
+:: Both checks must pass for Node.js to be considered available
+if !WHERE_NODE_RESULT! equ 0 (
+    if !NODE_CMD_RESULT! equ 0 (
+        for /f "tokens=*" %%i in ('node --version 2^>nul') do set "NODE_VERSION=%%i"
+        if defined NODE_VERSION (
+            echo   ✓ Node.js found: !NODE_VERSION!
+            call :log "Node.js found: !NODE_VERSION!"
+            
+            :: Get Node.js path
             for /f "tokens=*" %%a in ('where node 2^>nul') do (
                 set "NODE_PATH=%%a"
-                echo   ✓ Node.js path verified: !NODE_PATH!
-                call :log "Node.js path verified: !NODE_PATH!"
+                echo   ✓ Node.js path: !NODE_PATH!
+                call :log "Node.js path: !NODE_PATH!"
+            )
+            
+            :: Validate Node.js version
+            call :validate_node_version "!NODE_VERSION!"
+            set "VERSION_CHECK_RESULT=!errorlevel!"
+            if !VERSION_CHECK_RESULT! neq 0 (
+                echo   ⚠ Node.js version !NODE_VERSION! validation failed
+                echo   ⚠ The application may not work correctly, but will continue anyway
+                call :log "Node.js version !NODE_VERSION! validation failed, continuing"
+            ) else (
+                echo   ✓ Node.js version !NODE_VERSION! is compatible
+                call :log "Node.js version !NODE_VERSION! is compatible"
             )
         ) else (
-            echo   ⚠ Node.js path verification failed
-            call :log "Node.js path verification failed"
+            echo   ✗ Node.js command succeeded but version not detected
+            call :log "Node.js command succeeded but version not detected"
+            call :nodejs_not_found_message
+            exit /b 1
         )
+        
+        :: Check npm availability (critical for functionality)
+        call :check_npm
+        set "NPM_CHECK_RESULT=!errorlevel!"
+        if !NPM_CHECK_RESULT! neq 0 (
+            echo   ✗ npm verification failed, cannot continue
+            call :log "npm verification failed, cannot continue"
+            call :nodejs_not_found_message
+            exit /b 1
+        )
+        
+        call :log "Node.js and npm verification completed successfully"
+        exit /b 0
     ) else (
-        echo   ✗ Node.js command succeeded but version not detected
-        call :log "Node.js command succeeded but version not detected"
-        set "NODE_CMD_RESULT=1"
-    )
-) else (
-    echo   ✗ Node.js not found (exit code: !NODE_CMD_RESULT!)
-    call :log "Node.js not found with exit code: !NODE_CMD_RESULT!"
-)
-
-:: If Node.js is available, check npm
-if !NODE_CMD_RESULT! equ 0 (
-    :: Check npm availability (critical for functionality)
-    call :check_npm
-    set "NPM_CHECK_RESULT=!errorlevel!"
-    if !NPM_CHECK_RESULT! neq 0 (
-        echo   ✗ npm verification failed, cannot continue
-        call :log "npm verification failed, cannot continue"
+        echo   ✗ Node.js found in PATH but not functional (exit code: !NODE_CMD_RESULT!)
+        call :log "Node.js found in PATH but not functional with exit code: !NODE_CMD_RESULT!"
+        call :nodejs_not_found_message
         exit /b 1
     )
-    
-    call :log "Node.js and npm verification completed successfully"
-    exit /b 0
 ) else (
-    echo   ✗ Node.js not found
-    call :log "Node.js not found, checking for bundled installer"
-    echo   Looking for bundled Node.js installer...
-
-    if exist "%SCRIPT_DIR%!NODE_INSTALLER!" (
-        echo   ✓ Found bundled installer: !NODE_INSTALLER!
-        call :log "Found bundled installer: !NODE_INSTALLER!"
-        call :install_nodejs
-        if !errorlevel! neq 0 exit /b 1
-    ) else (
-        echo   ✗ No bundled installer found
-        call :log "No bundled installer found"
-        call :download_nodejs
-        if !errorlevel! neq 0 exit /b 1
-    )
-    
-    :: After installation, check npm
-    call :check_npm
-    exit /b !errorlevel!
+    echo   ✗ Node.js not found in system PATH
+    call :log "Node.js not found in system PATH"
+    call :nodejs_not_found_message
+    exit /b 1
 )
 
 :check_npm
@@ -237,127 +213,34 @@ if !errorlevel! equ 0 (
 )
 
 :: ============================
-:: Function: Install Node.js
+:: Function: Node.js Not Found Message
 :: ============================
-:install_nodejs
-call :log "Installing Node.js silently"
-echo   Installing Node.js...
-echo   Please wait, this may take a few minutes...
+:nodejs_not_found_message
+echo.
+echo ========================================================
+echo          Node.js Installation Required
+echo ========================================================
+echo.
+echo ✗ Node.js was not found on your system.
+echo   Node.js is required to run Inventory Pro.
+echo.
+echo Please install Node.js before running this application:
+echo.
+echo   1. Visit: https://nodejs.org/
+echo   2. Download the LTS version for Windows
+echo   3. Run the installer with default settings
+echo   4. Restart this script after installation
+echo.
+echo Recommended version: Node.js LTS (Latest Long Term Support)
+echo Minimum version: Node.js v16.0.0
+echo.
+echo After installation, you can verify it works by running:
+echo   node --version
+echo   npm --version
+echo.
+call :log "Node.js not found message displayed to user"
+goto :eof
 
-start /wait msiexec /i "%SCRIPT_DIR%!NODE_INSTALLER!" /quiet /norestart
-set "INSTALL_EXIT_CODE=!errorlevel!"
-
-if !INSTALL_EXIT_CODE! neq 0 (
-    echo   ✗ Node.js installation failed with exit code !INSTALL_EXIT_CODE!
-    call :log "Node.js installation failed with exit code !INSTALL_EXIT_CODE!"
-    exit /b 1
-)
-
-:: Refresh environment variables
-call :refresh_env
-
-:: Verify installation with retry logic
-echo   Verifying Node.js installation...
-call :log "Verifying Node.js installation with retry logic"
-
-set "RETRY_COUNT=0"
-set "MAX_RETRIES=3"
-
-:verify_install_retry
-set /a "RETRY_COUNT+=1"
-call :log "Verification attempt %RETRY_COUNT% of %MAX_RETRIES%"
-
-timeout /t 5 >nul
-
-node --version >nul 2>&1
-if !errorlevel! equ 0 (
-    for /f "tokens=*" %%i in ('node --version') do set "NODE_VERSION=%%i"
-    echo   ✓ Node.js installed successfully: !NODE_VERSION!
-    call :log "Node.js installed successfully: !NODE_VERSION!"
-    
-    :: Also verify npm is available
-    call :log "Verifying npm availability after Node.js installation"
-    npm --version >nul 2>&1
-    if !errorlevel! equ 0 (
-        for /f "tokens=*" %%i in ('npm --version') do set "NPM_VERSION=%%i"
-        echo   ✓ npm is also available: !NPM_VERSION!
-        call :log "npm is also available: !NPM_VERSION!"
-        exit /b 0
-    ) else (
-        echo   ⚠ npm not immediately available, may need environment refresh
-        call :log "npm not immediately available after Node.js installation"
-        call :refresh_env
-        
-        :: Try npm again after environment refresh
-        npm --version >nul 2>&1
-        if !errorlevel! equ 0 (
-            for /f "tokens=*" %%i in ('npm --version') do set "NPM_VERSION=%%i"
-            echo   ✓ npm available after environment refresh: !NPM_VERSION!
-            call :log "npm available after environment refresh: !NPM_VERSION!"
-            exit /b 0
-        ) else (
-            echo   ⚠ npm still not available, continuing anyway
-            call :log "npm still not available after environment refresh"
-            exit /b 0
-        )
-    )
-) else (
-    if !RETRY_COUNT! lss !MAX_RETRIES! (
-        echo   ⚠ Node.js verification failed, retrying (attempt !RETRY_COUNT!/!MAX_RETRIES!)...
-        call :log "Node.js verification failed, retrying (attempt !RETRY_COUNT!/!MAX_RETRIES!)"
-        call :refresh_env
-        goto :verify_install_retry
-    ) else (
-        echo   ✗ Node.js installation verification failed after !MAX_RETRIES! attempts
-        call :log "Node.js installation verification failed after !MAX_RETRIES! attempts"
-        exit /b 1
-    )
-)
-
-:: ============================
-:: Function: Download Node.js
-:: ============================
-:download_nodejs
-call :log "Downloading Node.js installer"
-echo   Downloading Node.js installer...
-echo   Please ensure you have an internet connection.
-
-:: Download latest LTS Node.js (v20.x.x as of 2024)
-set "DOWNLOAD_URL=https://nodejs.org/dist/v20.12.2/node-v20.12.2-x64.msi"
-set "DOWNLOAD_FILE=%SCRIPT_DIR%node-v20.12.2-x64.msi"
-
-call :log "Downloading Node.js from: %DOWNLOAD_URL%"
-call :log "Download destination: %DOWNLOAD_FILE%"
-
-echo   Downloading Node.js installer (this may take a few minutes)...
-powershell -Command "try { (New-Object Net.WebClient).DownloadFile('%DOWNLOAD_URL%', '%DOWNLOAD_FILE%'); Write-Host 'Download completed' } catch { Write-Host 'Download failed:' $_.Exception.Message; exit 1 }" 2>&1 | tee -a "%LOG_FILE%"
-
-if !errorlevel! neq 0 (
-    echo   ✗ PowerShell download failed, trying alternative method
-    call :log "PowerShell download failed, trying alternative method"
-    
-    :: Try using bitsadmin as fallback
-    bitsadmin /transfer "NodeJSDownload" /download /priority high "%DOWNLOAD_URL%" "%DOWNLOAD_FILE%" 2>&1 | tee -a "%LOG_FILE%"
-    
-    if !errorlevel! neq 0 (
-        echo   ✗ Alternative download method also failed
-        call :log "Alternative download method also failed"
-        exit /b 1
-    )
-)
-
-if exist "%DOWNLOAD_FILE%" (
-    echo   ✓ Node.js installer downloaded
-    call :log "Node.js installer downloaded successfully"
-    set "NODE_INSTALLER=%DOWNLOAD_FILE%"
-    call :install_nodejs
-    exit /b !errorlevel!
-) else (
-    echo   ✗ Failed to download Node.js installer
-    echo   Please download Node.js manually from https://nodejs.org/
-    call :log "Failed to download Node.js installer"
-    exit /b 1
-)
 
 :: ============================
 :: Function: Install Modules
@@ -644,9 +527,9 @@ echo.
 echo Please check the log file for details: %LOG_FILE%
 echo.
 echo Common solutions:
-echo   1. Run as Administrator
-echo   2. Check internet connection
-echo   3. Ensure antivirus is not blocking the installation
+echo   1. Ensure Node.js is installed (visit https://nodejs.org/)
+echo   2. Run as Administrator
+echo   3. Check internet connection
 echo   4. Try running the script again
 echo.
 echo Press any key to exit...

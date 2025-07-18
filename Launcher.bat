@@ -32,9 +32,21 @@ call :log "Starting Inventory Pro Launcher"
 
 echo [1/6] Checking Node.js installation...
 call :check_nodejs
-if !errorlevel! neq 0 (
+set "NODE_CHECK_RESULT=!errorlevel!"
+if !NODE_CHECK_RESULT! neq 0 (
     echo   ✗ Node.js installation or verification failed
-    call :log "Node.js installation or verification failed"
+    call :log "Node.js installation or verification failed with exit code !NODE_CHECK_RESULT!"
+    
+    :: Provide specific troubleshooting suggestions
+    echo.
+    echo   Troubleshooting suggestions:
+    echo   1. Run this script as Administrator
+    echo   2. Check your internet connection
+    echo   3. Ensure Windows Defender/Antivirus is not blocking the installation
+    echo   4. Try placing a Node.js installer named 'node-installer.msi' in this directory
+    echo   5. Check the log file for more details: %LOG_FILE%
+    echo.
+    
     goto :error_exit
 ) else (
     echo   ✓ Node.js installation verified successfully
@@ -93,19 +105,29 @@ if !errorlevel! equ 0 (
     echo   ✓ Node.js found: !NODE_VERSION!
     call :log "Node.js found: !NODE_VERSION!"
     
-    :: Validate Node.js version (require v16 or higher)
+    :: Validate Node.js version (require v16 or higher, but allow newer versions)
     call :validate_node_version "!NODE_VERSION!"
-    if !errorlevel! neq 0 (
-        echo   ⚠ Node.js version !NODE_VERSION! may be incompatible (require v16+)
-        call :log "Node.js version !NODE_VERSION! may be incompatible"
+    set "VERSION_CHECK_RESULT=!errorlevel!"
+    if !VERSION_CHECK_RESULT! neq 0 (
+        echo   ⚠ Node.js version !NODE_VERSION! is below recommended minimum (v16+)
+        echo   ⚠ The application may not work correctly, but will continue anyway
+        call :log "Node.js version !NODE_VERSION! below recommended minimum v16, continuing"
     ) else (
         echo   ✓ Node.js version !NODE_VERSION! is compatible
         call :log "Node.js version !NODE_VERSION! is compatible"
     )
     
-    :: Check npm availability
+    :: Check npm availability (critical for functionality)
     call :check_npm
-    exit /b !errorlevel!
+    set "NPM_CHECK_RESULT=!errorlevel!"
+    if !NPM_CHECK_RESULT! neq 0 (
+        echo   ✗ npm verification failed, cannot continue
+        call :log "npm verification failed, cannot continue"
+        exit /b 1
+    )
+    
+    call :log "Node.js and npm verification completed successfully"
+    exit /b 0
 ) else (
     echo   ✗ Node.js not found
     call :log "Node.js not found, checking for bundled installer"
@@ -130,16 +152,61 @@ if !errorlevel! equ 0 (
 
 :check_npm
 call :log "Checking npm installation"
+echo   Verifying npm availability...
+
+:: First check if npm command exists
+where npm >nul 2>&1
+if !errorlevel! neq 0 (
+    echo   ✗ npm command not found in PATH
+    call :log "npm command not found in PATH"
+    call :log "Current PATH: !PATH!"
+    
+    :: Try to refresh environment variables
+    call :refresh_env
+    
+    :: Check again after refresh
+    where npm >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo   ✗ npm still not found after environment refresh
+        call :log "npm still not found after environment refresh"
+        exit /b 1
+    )
+)
+
+:: Check if npm is functional
 npm --version >nul 2>&1
 if !errorlevel! equ 0 (
     for /f "tokens=*" %%i in ('npm --version') do set "NPM_VERSION=%%i"
-    echo   ✓ npm found: !NPM_VERSION!
-    call :log "npm found: !NPM_VERSION!"
-    call :log "Node.js and npm verification successful"
+    echo   ✓ npm found and functional: v!NPM_VERSION!
+    call :log "npm found and functional: v!NPM_VERSION!"
+    
+    :: Validate npm version (should be reasonably recent)
+    call :validate_npm_version "!NPM_VERSION!"
+    set "NPM_VERSION_CHECK=!errorlevel!"
+    if !NPM_VERSION_CHECK! neq 0 (
+        echo   ⚠ npm version !NPM_VERSION! is quite old, consider updating
+        call :log "npm version !NPM_VERSION! is quite old but acceptable"
+    ) else (
+        echo   ✓ npm version !NPM_VERSION! is acceptable
+        call :log "npm version !NPM_VERSION! is acceptable"
+    )
+    
+    call :log "npm verification successful"
     exit /b 0
 ) else (
-    echo   ✗ npm not found after Node.js installation
-    call :log "npm not found after Node.js installation"
+    echo   ✗ npm found but not functional
+    call :log "npm found but not functional"
+    
+    :: Try to get more detailed error information
+    npm --version 2>&1 | findstr /r ".*" > "%TEMP%\npm_error.txt"
+    if exist "%TEMP%\npm_error.txt" (
+        echo   npm error details:
+        type "%TEMP%\npm_error.txt"
+        call :log "npm error details:"
+        for /f "tokens=*" %%i in ('type "%TEMP%\npm_error.txt"') do call :log "  %%i"
+        del "%TEMP%\npm_error.txt"
+    )
+    
     exit /b 1
 )
 
@@ -163,20 +230,62 @@ if !INSTALL_EXIT_CODE! neq 0 (
 :: Refresh environment variables
 call :refresh_env
 
-:: Verify installation
+:: Verify installation with retry logic
 echo   Verifying Node.js installation...
-call :log "Verifying Node.js installation"
+call :log "Verifying Node.js installation with retry logic"
+
+set "RETRY_COUNT=0"
+set "MAX_RETRIES=3"
+
+:verify_install_retry
+set /a "RETRY_COUNT+=1"
+call :log "Verification attempt %RETRY_COUNT% of %MAX_RETRIES%"
+
 timeout /t 5 >nul
+
 node --version >nul 2>&1
 if !errorlevel! equ 0 (
     for /f "tokens=*" %%i in ('node --version') do set "NODE_VERSION=%%i"
     echo   ✓ Node.js installed successfully: !NODE_VERSION!
     call :log "Node.js installed successfully: !NODE_VERSION!"
-    exit /b 0
+    
+    :: Also verify npm is available
+    call :log "Verifying npm availability after Node.js installation"
+    npm --version >nul 2>&1
+    if !errorlevel! equ 0 (
+        for /f "tokens=*" %%i in ('npm --version') do set "NPM_VERSION=%%i"
+        echo   ✓ npm is also available: !NPM_VERSION!
+        call :log "npm is also available: !NPM_VERSION!"
+        exit /b 0
+    ) else (
+        echo   ⚠ npm not immediately available, may need environment refresh
+        call :log "npm not immediately available after Node.js installation"
+        call :refresh_env
+        
+        :: Try npm again after environment refresh
+        npm --version >nul 2>&1
+        if !errorlevel! equ 0 (
+            for /f "tokens=*" %%i in ('npm --version') do set "NPM_VERSION=%%i"
+            echo   ✓ npm available after environment refresh: !NPM_VERSION!
+            call :log "npm available after environment refresh: !NPM_VERSION!"
+            exit /b 0
+        ) else (
+            echo   ⚠ npm still not available, continuing anyway
+            call :log "npm still not available after environment refresh"
+            exit /b 0
+        )
+    )
 ) else (
-    echo   ✗ Node.js installation verification failed
-    call :log "Node.js installation verification failed"
-    exit /b 1
+    if !RETRY_COUNT! lss !MAX_RETRIES! (
+        echo   ⚠ Node.js verification failed, retrying (attempt !RETRY_COUNT!/!MAX_RETRIES!)...
+        call :log "Node.js verification failed, retrying (attempt !RETRY_COUNT!/!MAX_RETRIES!)"
+        call :refresh_env
+        goto :verify_install_retry
+    ) else (
+        echo   ✗ Node.js installation verification failed after !MAX_RETRIES! attempts
+        call :log "Node.js installation verification failed after !MAX_RETRIES! attempts"
+        exit /b 1
+    )
 )
 
 :: ============================
@@ -187,11 +296,29 @@ call :log "Downloading Node.js installer"
 echo   Downloading Node.js installer...
 echo   Please ensure you have an internet connection.
 
-:: Download latest LTS Node.js (adjust URL as needed)
-set "DOWNLOAD_URL=https://nodejs.org/dist/v18.19.0/node-v18.19.0-x64.msi"
-set "DOWNLOAD_FILE=%SCRIPT_DIR%node-v18.19.0-x64.msi"
+:: Download latest LTS Node.js (v20.x.x as of 2024)
+set "DOWNLOAD_URL=https://nodejs.org/dist/v20.12.2/node-v20.12.2-x64.msi"
+set "DOWNLOAD_FILE=%SCRIPT_DIR%node-v20.12.2-x64.msi"
 
-powershell -Command "(New-Object Net.WebClient).DownloadFile('%DOWNLOAD_URL%', '%DOWNLOAD_FILE%')" 2>nul
+call :log "Downloading Node.js from: %DOWNLOAD_URL%"
+call :log "Download destination: %DOWNLOAD_FILE%"
+
+echo   Downloading Node.js installer (this may take a few minutes)...
+powershell -Command "try { (New-Object Net.WebClient).DownloadFile('%DOWNLOAD_URL%', '%DOWNLOAD_FILE%'); Write-Host 'Download completed' } catch { Write-Host 'Download failed:' $_.Exception.Message; exit 1 }" 2>&1 | tee -a "%LOG_FILE%"
+
+if !errorlevel! neq 0 (
+    echo   ✗ PowerShell download failed, trying alternative method
+    call :log "PowerShell download failed, trying alternative method"
+    
+    :: Try using bitsadmin as fallback
+    bitsadmin /transfer "NodeJSDownload" /download /priority high "%DOWNLOAD_URL%" "%DOWNLOAD_FILE%" 2>&1 | tee -a "%LOG_FILE%"
+    
+    if !errorlevel! neq 0 (
+        echo   ✗ Alternative download method also failed
+        call :log "Alternative download method also failed"
+        exit /b 1
+    )
+)
 
 if exist "%DOWNLOAD_FILE%" (
     echo   ✓ Node.js installer downloaded
@@ -509,22 +636,96 @@ goto :eof
 
 :refresh_env
 :: Refresh environment variables
-for /f "tokens=*" %%i in ('powershell -Command "[Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH', 'User')"') do set "PATH=%%i"
+call :log "Refreshing environment variables"
+echo   Refreshing environment variables...
+
+:: Get updated PATH from registry
+for /f "tokens=*" %%i in ('powershell -Command "[Environment]::GetEnvironmentVariable('PATH', 'Machine')"') do set "MACHINE_PATH=%%i"
+for /f "tokens=*" %%i in ('powershell -Command "[Environment]::GetEnvironmentVariable('PATH', 'User')"') do set "USER_PATH=%%i"
+
+:: Combine paths
+if defined MACHINE_PATH (
+    if defined USER_PATH (
+        set "PATH=%MACHINE_PATH%;%USER_PATH%"
+    ) else (
+        set "PATH=%MACHINE_PATH%"
+    )
+) else (
+    if defined USER_PATH (
+        set "PATH=%USER_PATH%"
+    )
+)
+
+call :log "Environment variables refreshed"
+call :log "Updated PATH: !PATH!"
 goto :eof
 
 :validate_node_version
 :: Validate Node.js version (require v16 or higher)
 set "VERSION_STR=%~1"
+call :log "Validating Node.js version: %VERSION_STR%"
+
+:: Handle empty version string
+if "!VERSION_STR!"=="" (
+    call :log "Empty version string provided"
+    exit /b 1
+)
+
 :: Remove 'v' prefix if present
 set "VERSION_STR=!VERSION_STR:v=!"
-:: Extract major version number
+call :log "Version string after removing v prefix: !VERSION_STR!"
+
+:: Extract major version number - handle edge cases
 for /f "tokens=1 delims=." %%a in ("!VERSION_STR!") do set "MAJOR_VERSION=%%a"
+
+:: Validate that we got a numeric major version
+echo !MAJOR_VERSION! | findstr /r "^[0-9][0-9]*$" >nul
+if !errorlevel! neq 0 (
+    call :log "Invalid major version format: !MAJOR_VERSION!"
+    exit /b 1
+)
+
+call :log "Extracted major version: !MAJOR_VERSION!"
+
 :: Check if major version is 16 or higher
 if !MAJOR_VERSION! geq 16 (
     call :log "Node.js version validation passed: v!MAJOR_VERSION! >= v16"
     exit /b 0
 ) else (
     call :log "Node.js version validation failed: v!MAJOR_VERSION! < v16"
+    exit /b 1
+)
+goto :eof
+
+:validate_npm_version
+:: Validate npm version (warn if below v6)
+set "NPM_VERSION_STR=%~1"
+call :log "Validating npm version: %NPM_VERSION_STR%"
+
+:: Handle empty version string
+if "!NPM_VERSION_STR!"=="" (
+    call :log "Empty npm version string provided"
+    exit /b 1
+)
+
+:: Extract major version number
+for /f "tokens=1 delims=." %%a in ("!NPM_VERSION_STR!") do set "NPM_MAJOR_VERSION=%%a"
+
+:: Validate that we got a numeric major version
+echo !NPM_MAJOR_VERSION! | findstr /r "^[0-9][0-9]*$" >nul
+if !errorlevel! neq 0 (
+    call :log "Invalid npm major version format: !NPM_MAJOR_VERSION!"
+    exit /b 1
+)
+
+call :log "Extracted npm major version: !NPM_MAJOR_VERSION!"
+
+:: Check if major version is 6 or higher (v6 was released in 2018)
+if !NPM_MAJOR_VERSION! geq 6 (
+    call :log "npm version validation passed: v!NPM_MAJOR_VERSION! >= v6"
+    exit /b 0
+) else (
+    call :log "npm version validation warning: v!NPM_MAJOR_VERSION! < v6 (old but may work)"
     exit /b 1
 )
 goto :eof

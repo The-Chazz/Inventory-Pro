@@ -44,6 +44,8 @@ The `Launcher.bat` script will automatically:
 - Windows 10/11
 - Administrator privileges (recommended)
 - Internet connection (for Node.js download if needed)
+- **Node.js Compatibility**: v16.0.0 or higher (including v24.3.0 and newer)
+- **npm Compatibility**: v6.0.0 or higher (automatically included with Node.js)
 
 ### Manual Installation
 
@@ -238,8 +240,11 @@ The automated launcher provides:
 
 1. **Node.js Management**
    - Automatic detection and installation
-   - Support for bundled installers
-   - Version verification and updates
+   - **Enhanced version compatibility**: Supports Node.js v16.0.0 through v24.3.0 and beyond
+   - **Improved npm verification**: Enhanced detection with retry logic and environment refresh
+   - **Better error handling**: Detailed error messages and troubleshooting suggestions
+   - Support for bundled installers with fallback to download
+   - Comprehensive logging of installation process
 
 2. **Dependency Management**
    - Smart dependency updates (excludes UI packages)
@@ -257,9 +262,11 @@ The automated launcher provides:
    - Browser launch with application URL
 
 5. **Error Handling**
-   - Comprehensive error logging
-   - User-friendly error messages
-   - Recovery suggestions and troubleshooting
+   - Comprehensive error logging with detailed timestamps
+   - User-friendly error messages with specific troubleshooting steps
+   - Automatic retry logic for network operations and environment detection
+   - Enhanced npm verification with PATH refresh and alternative detection methods
+   - Recovery suggestions and troubleshooting guidance
 
 ### Troubleshooting the Launcher
 
@@ -441,6 +448,7 @@ The built files will be in the `dist/` directory.
    - Place `node-installer.msi` in the project root directory
    - Download Node.js manually from https://nodejs.org/
    - Run Command Prompt as Administrator
+   - **Note**: All Node.js versions v16.0.0 and higher are supported (including v24.3.0)
 
 2. **"Permission denied" - Solutions:**
    - Run Command Prompt as Administrator
@@ -453,6 +461,13 @@ The built files will be in the `dist/` directory.
    - Check internet connection
    - Clear npm cache: `npm cache clean --force`
    - Try manual installation: `npm install -g pm2`
+   - Ensure npm version is v6.0.0 or higher
+
+4. **"Node.js version incompatible" - Solutions:**
+   - **Update Node.js**: The launcher supports v16.0.0 and higher (including v24.3.0+)
+   - **Current versions supported**: v16.x, v18.x, v20.x, v22.x, v24.x and newer
+   - **Download latest LTS**: https://nodejs.org/en/download/
+   - **Version warnings**: Older versions (v14, v15) will show warnings but may still work
 
 4. **"Build failed" - Solutions:**
    - Check for TypeScript errors: `npm run check`
@@ -460,11 +475,25 @@ The built files will be in the `dist/` directory.
    - Check available disk space
    - Review build logs in `launcher.log`
 
+5. **"npm not found" or "npm verification failed" - Solutions:**
+   - **Automatic retry**: The launcher now automatically retries npm detection
+   - **Environment refresh**: Run `refreshenv` or restart Command Prompt
+   - **Manual verification**: Check if npm is in PATH with `where npm`
+   - **Reinstall Node.js**: npm is included with Node.js installations
+   - **Check npm version**: Ensure npm is v6.0.0 or higher with `npm --version`
+
 5. **"Application not responding" - Solutions:**
    - Check if port 5000 is available
    - Review PM2 logs: `pm2 logs inventory-pro`
    - Verify the build was successful
    - Check Windows Firewall settings
+
+6. **"Version compatibility warnings" - Information:**
+   - **Node.js v24.3.0 and newer**: Fully supported and recommended
+   - **Node.js v16-v23**: All versions in this range are compatible
+   - **Node.js v14-v15**: Will show warnings but may still work
+   - **npm v6+**: Required for proper package management
+   - **Automatic updates**: The launcher will suggest updating old versions
 
 ### Reset Instructions
 

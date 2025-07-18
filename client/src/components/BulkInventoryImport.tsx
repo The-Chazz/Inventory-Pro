@@ -30,6 +30,7 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [preview, setPreview] = useState<CSVRow[]>([]);
+  const [allParsedRows, setAllParsedRows] = useState<CSVRow[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -38,6 +39,7 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
   const resetForm = () => {
     setFile(null);
     setPreview([]);
+    setAllParsedRows([]);
     setErrors([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -143,6 +145,7 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
       });
       
       setPreview(parsedRows.slice(0, 5)); // Show only first 5 rows in preview
+      setAllParsedRows(parsedRows); // Store all parsed rows for submission
       setErrors(rowErrors);
       
       if (parsedRows.length === 0) {
@@ -167,6 +170,7 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
       console.error('Error parsing CSV:', error);
       setErrors([error.message || 'Failed to parse CSV file. Please check the format.']);
       setPreview([]);
+      setAllParsedRows([]);
       
       toast({
         title: "Error",
@@ -186,10 +190,10 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
     console.log("Starting bulk import submission");
     
     try {
-      console.log("Preview data available:", preview.length, "items");
+      console.log("All parsed data available:", allParsedRows.length, "items");
       
       // Normalize the validated items to ensure proper field mapping
-      const itemsToSubmit = preview.map(item => {
+      const itemsToSubmit = allParsedRows.map(item => {
         // Fix field names to match expected format in database
         const normalizedItem: any = {};
         
@@ -369,10 +373,10 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
                   ))}
                 </tbody>
               </table>
-              {preview.length < 5 ? (
-                <p className="mt-2 text-xs text-gray-500">Showing all {preview.length} items</p>
+              {allParsedRows.length <= 5 ? (
+                <p className="mt-2 text-xs text-gray-500">Showing all {allParsedRows.length} items</p>
               ) : (
-                <p className="mt-2 text-xs text-gray-500">Showing first 5 of {preview.length} items</p>
+                <p className="mt-2 text-xs text-gray-500">Showing first 5 of {allParsedRows.length} items</p>
               )}
             </div>
           </div>

@@ -566,6 +566,60 @@
       "category": "authentication",
       "details": "User logged in successfully",
       "timestamp": "2025-07-18T04:56:42.316Z"
+    },
+    {
+      "id": 64,
+      "userId": 1,
+      "username": "admin",
+      "action": "User Login",
+      "category": "authentication",
+      "details": "User logged in successfully",
+      "timestamp": "2025-07-18T15:16:44.561Z"
+    },
+    {
+      "id": 65,
+      "userId": 0,
+      "username": "system",
+      "action": "Bulk Inventory Import",
+      "category": "inventory",
+      "details": "Bulk import: 15 created, 0 updated, 0 failed",
+      "timestamp": "2025-07-18T15:17:51.381Z"
+    },
+    {
+      "id": 66,
+      "userId": 0,
+      "username": "system",
+      "action": "Inventory Item Updated",
+      "category": "inventory",
+      "details": "Unauthorized profit update attempt for item ID: 1",
+      "timestamp": "2025-07-18T15:19:02.261Z"
+    },
+    {
+      "id": 67,
+      "userId": 1,
+      "username": "admin",
+      "action": "Inventory Item Updated",
+      "category": "inventory",
+      "details": "Updated item: Bananas (ID: 5), Price changed from 1.5 to 2.5, Cost price changed from not set to 2, Profit margin changed from not set to 25, Profit type changed from not set to percentage",
+      "timestamp": "2025-07-18T15:23:16.158Z"
+    },
+    {
+      "id": 68,
+      "userId": 0,
+      "username": "unknown",
+      "action": "Sale Recorded",
+      "category": "sales",
+      "details": "Sale completed: ID TRX-20250718-1, Total: $4.49, Items: 2",
+      "timestamp": "2025-07-18T15:24:03.085Z"
+    },
+    {
+      "id": 69,
+      "userId": 1,
+      "username": "admin",
+      "action": "Sale Refunded",
+      "category": "sales",
+      "details": "Refunded transaction: ID TRX-20250718-1, Total: $4.49, Items returned to inventory",
+      "timestamp": "2025-07-18T15:24:44.050Z"
     }
   ]
 }

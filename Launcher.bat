@@ -94,7 +94,7 @@ goto :end
 :: ============================
 :: Function: Check Node.js
 :: ============================
-::check_nodejs
+:check_nodejs
 call :log "Checking Node.js installation"
 echo   Checking for Node.js...
 

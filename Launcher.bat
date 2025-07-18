@@ -23,6 +23,9 @@ set "APP_NAME=inventory-pro"
 set "APP_PORT=5000"
 set "APP_URL=http://localhost:%APP_PORT%"
 
+:: Flag to track environment refresh - prevents infinite loops
+set "ENV_REFRESHED=0"
+
 :: Initialize log file
 echo [%DATE% %TIME%] Inventory Pro Launcher started > "%LOG_FILE%"
 
@@ -163,14 +166,20 @@ if !errorlevel! neq 0 (
     call :log "npm command not found in PATH"
     call :log "Current PATH: !PATH!"
     
-    :: Try to refresh environment variables
-    call :refresh_env
-    
-    :: Check again after refresh
-    where npm >nul 2>&1
-    if !errorlevel! neq 0 (
-        echo   ✗ npm still not found after environment refresh
-        call :log "npm still not found after environment refresh"
+    :: Try to refresh environment variables (only once)
+    if !ENV_REFRESHED! equ 0 (
+        call :refresh_env
+        
+        :: Check again after refresh
+        where npm >nul 2>&1
+        if !errorlevel! neq 0 (
+            echo   ✗ npm still not found after environment refresh
+            call :log "npm still not found after environment refresh"
+            exit /b 1
+        )
+    ) else (
+        echo   ✗ npm not found and environment already refreshed
+        call :log "npm not found and environment already refreshed"
         exit /b 1
     )
 )
@@ -312,7 +321,12 @@ if !errorlevel! neq 0 (
     )
     
     :: Refresh environment
-    call :refresh_env
+    if !ENV_REFRESHED! equ 0 (
+        call :refresh_env
+    ) else (
+        echo   ✓ Environment already refreshed, skipping
+        call :log "Environment already refreshed, skipping"
+    )
 )
 
 for /f "tokens=*" %%i in ('pm2 --version') do set "PM2_VERSION=%%i"
@@ -601,56 +615,36 @@ if !major! geq !MIN_MAJOR! (
 exit /b 0
 
 :refresh_env
-:: Refresh environment variables
-call :log "Refreshing environment variables"
+:: Refresh environment variables - execute only once per script run
+if !ENV_REFRESHED! equ 1 (
+    echo   ✓ Environment variables already refreshed
+    call :log "Environment refresh skipped - already completed"
+    goto :eof
+)
+
+call :log "Refreshing environment variables (single execution)"
 echo   Refreshing environment variables...
 
-:: Get updated PATH from registry
-for /f "tokens=*" %%i in ('powershell -Command "[Environment]::GetEnvironmentVariable('PATH', 'Machine')"') do set "MACHINE_PATH=%%i"
-for /f "tokens=*" %%i in ('powershell -Command "[Environment]::GetEnvironmentVariable('PATH', 'User')"') do set "USER_PATH=%%i"
+:: Mark as refreshed to prevent infinite loops
+set "ENV_REFRESHED=1"
 
-:: Combine paths
-if defined MACHINE_PATH (
-    if defined USER_PATH (
-        set "PATH=%MACHINE_PATH%;%USER_PATH%"
-    ) else (
-        set "PATH=%MACHINE_PATH%"
+:: Use PowerShell to refresh environment variables reliably
+powershell -Command "try { $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User'); Write-Host 'Environment variables refreshed successfully'; exit 0 } catch { Write-Warning 'Failed to refresh environment variables'; exit 1 }" 2>nul
+set "REFRESH_RESULT=!errorlevel!"
+
+if !REFRESH_RESULT! equ 0 (
+    :: Get updated PATH from PowerShell
+    for /f "tokens=*" %%i in ('powershell -Command "[Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')" 2^>nul') do (
+        set "PATH=%%i"
     )
+    echo   ✓ Environment variables refreshed successfully
+    call :log "Environment variables refreshed successfully"
 ) else (
-    if defined USER_PATH (
-        set "PATH=%USER_PATH%"
-    )
+    echo   ⚠ Environment refresh encountered issues, but continuing
+    call :log "Environment refresh encountered issues, but continuing"
 )
 
-:: Refresh environment variables specific to Node.js
-echo [%date% %time%] Refreshing environment variables
-call :log "Refreshing Node.js environment variables"
-
-:: Find Node.js path and update environment
-for /f "tokens=*" %%a in ('where node 2^>nul') do (
-    set "NODE_PATH=%%a"
-    call :log "Found Node.js at: !NODE_PATH!"
-    
-    :: Get the directory containing node.exe
-    for %%i in ("!NODE_PATH!") do set "NODE_DIR=%%~dpi"
-    set "NODE_DIR=!NODE_DIR:~0,-1!"
-    
-    :: Update PATH if not already included
-    echo !PATH! | findstr /i "!NODE_DIR!" >nul || (
-        set "PATH=!PATH!;!NODE_DIR!"
-        call :log "Added Node.js directory to PATH: !NODE_DIR!"
-    )
-)
-
-if defined NODE_PATH (
-    echo [%date% %time%] Node.js path: !NODE_PATH!
-    call :log "Node.js path updated: !NODE_PATH!"
-) else (
-    echo [%date% %time%] Warning: Node.js path not found
-    call :log "Warning: Node.js path not found during environment refresh"
-)
-
-call :log "Environment variables refreshed"
+call :log "Environment refresh completed with result: !REFRESH_RESULT!"
 call :log "Updated PATH: !PATH!"
 goto :eof
 

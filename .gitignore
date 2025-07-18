@@ -47,6 +47,14 @@ temp/
 server/uploads/*
 !server/uploads/.gitkeep
 
+# Development artifacts
+*.log
+*.debug
+*.trace
+.vscode/settings.json
+.vscode/launch.json
+*.code-workspace
+
 # Cache
 .cache/
 .parcel-cache/

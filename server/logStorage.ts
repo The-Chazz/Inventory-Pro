@@ -75,7 +75,6 @@ export class FileLogStorage implements ILogStorage {
   }
 
   async createLog(log: InsertLog): Promise<ActivityLog> {
-    console.log("Creating log in file storage:", log);
     const newLog: ActivityLog = {
       id: this.nextId++,
       userId: log.userId,

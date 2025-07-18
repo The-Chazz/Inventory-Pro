@@ -49,10 +49,3 @@ export const config = {
   sessionSecret: process.env.SESSION_SECRET || 'inventory-pro-secret-key-1234',
   sessionMaxAge: parseInt(process.env.SESSION_MAX_AGE || '7200000', 10), // 2 hours in milliseconds
 };
-
-// Log the configuration (but hide secrets)
-console.log('App configuration:');
-console.log('- File storage mode: enabled (always)');
-console.log('- Environment:', config.nodeEnv);
-console.log('- Port:', config.port);
-console.log('- Session max age:', config.sessionMaxAge, 'ms');

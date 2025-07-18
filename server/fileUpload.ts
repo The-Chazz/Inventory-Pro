@@ -15,13 +15,7 @@ const inventoryImagesDir = path.join(uploadDir, 'inventory');
 const logoImagesDir = path.join(uploadDir, 'logos');
 const csvDir = path.join(uploadDir, 'csv');
 
-// Ensure upload directories exist with debug logging
-console.log(`Creating upload directories if they don't exist:`);
-console.log(`- Upload dir: ${uploadDir}`);
-console.log(`- Inventory images dir: ${inventoryImagesDir}`);
-console.log(`- Logo images dir: ${logoImagesDir}`);
-console.log(`- CSV dir: ${csvDir}`);
-
+// Ensure upload directories exist
 fs.ensureDirSync(uploadDir);
 fs.ensureDirSync(inventoryImagesDir);
 fs.ensureDirSync(logoImagesDir);
@@ -184,14 +178,12 @@ export async function processCsvFile(filePath: string): Promise<any[]> {
   const { parse } = await import('csv-parse/sync');
   
   try {
-    console.log(`Processing CSV file: ${filePath}`);
     const content = await fs.readFile(filePath, 'utf-8');
     
     // Parse CSV records
     const records = parse(content, {
       columns: (header) => {
         // Normalize column headers to lowercase
-        console.log('Original CSV headers:', header);
         return header.map((column: string) => {
           // Handle common field name variations
           let normalizedColumn = column.toLowerCase().trim();
@@ -209,8 +201,6 @@ export async function processCsvFile(filePath: string): Promise<any[]> {
       skip_empty_lines: true,
       trim: true
     });
-    
-    console.log(`Processed ${records.length} records from CSV`);
     
     // Standardize field names in each record
     const standardizedRecords = records.map((record: any) => {

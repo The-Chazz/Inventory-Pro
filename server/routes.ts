@@ -257,8 +257,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get information about the current user
       const currentUser = getCurrentUser(req);
-      console.log("Inventory update attempted by:", currentUser);
-      
       // Prevent non-admin/manager roles from updating profit-related fields
       const hasProfitUpdates = req.body.costPrice !== undefined || 
                              req.body.profitMargin !== undefined || 
@@ -366,9 +364,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!success) {
         return res.status(404).json({ error: "Failed to delete item" });
       }
-      
-      console.log("Inventory delete performed by:", currentUser);
-      
       // Log the inventory deletion activity
       const details = `Deleted item: ${item.name} (ID: ${item.id}, SKU: ${item.sku}, Stock: ${item.stock})`;
       
@@ -390,20 +385,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // File upload endpoint for CSV inventory import
   app.post("/api/inventory/csv-upload", csvUpload.single('file'), async (req: Request, res: Response) => {
     try {
-      console.log("CSV upload request received");
-      
       if (!req.file) {
-        console.log("No CSV file received in request");
         return res.status(400).json({ error: "No file uploaded" });
       }
-      
-      console.log("CSV file received:", {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        path: req.file.path,
-        size: req.file.size
-      });
-      
       // Process the CSV file
       const csvItems = await processCsvFile(req.file.path);
       
@@ -430,13 +414,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // Debug log for item validation
-        console.log(`Item ${index + 1} normalized fields:`, Object.keys(normalizedItem));
-        
         return normalizedItem;
       });
-      
-      console.log(`Successfully processed ${normalizedItems.length} items from CSV`);
-      
       // Return the parsed and normalized CSV data
       res.json({
         success: true,
@@ -455,24 +434,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Inventory image upload endpoint
   app.post("/api/inventory/image-upload", inventoryImageUpload.single('image'), async (req: Request, res: Response) => {
     try {
-      console.log("Inventory image upload request received");
-      
       if (!req.file) {
-        console.log("No file received in request");
         return res.status(400).json({ error: "No image uploaded" });
       }
-      
-      console.log("File received:", {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        path: req.file.path,
-        size: req.file.size
-      });
-      
       // Generate URL for the uploaded image
       const imageUrl = `/uploads/inventory/${req.file.filename}`;
-      console.log("Generated image URL:", imageUrl);
-      
       res.json({
         success: true,
         imageUrl,
@@ -490,35 +456,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Store logo upload endpoint
   app.post("/api/settings/logo-upload", logoImageUpload.single('logo'), async (req: Request, res: Response) => {
     try {
-      console.log("Store logo upload request received");
-      
       if (!req.file) {
-        console.log("No logo file received in request");
         return res.status(400).json({ error: "No logo image uploaded" });
       }
-      
-      console.log("Logo file received:", {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        path: req.file.path,
-        size: req.file.size
-      });
-      
       // Generate URL for the uploaded logo
       const logoUrl = `/uploads/logos/${req.file.filename}`;
-      console.log("Generated logo URL:", logoUrl);
-      
       // Update store settings with the new logo URL
       const storeSettings = await fileStorage.getStoreSettings();
-      console.log("Current store settings:", storeSettings);
-      
       await fileStorage.updateStoreSettings({
         ...storeSettings,
         storeLogo: logoUrl
       });
-      
-      console.log("Updated store settings with new logo");
-      
       // Get current user for logging
       const currentUser = getCurrentUser(req);
       
@@ -546,16 +494,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/inventory/bulk", async (req: Request, res: Response) => {
     try {
-      console.log("Bulk inventory import request received");
       const { items } = req.body;
       
       if (!items || !Array.isArray(items) || items.length === 0) {
-        console.log("Invalid or empty items array received:", items);
         return res.status(400).json({ error: "Invalid or empty items array" });
       }
-      
-      console.log(`Processing ${items.length} items for bulk import`);
-      
       const results: {
         updated: number;
         created: number;
@@ -582,10 +525,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               normalizedItem[key.toLowerCase()] = item[key];
             }
           });
-          
-          console.log(`Processing item with SKU: ${normalizedItem.sku || 'unknown'}`);
-          console.log("Item fields:", Object.keys(normalizedItem));
-          
           // Check if required fields are present
           const requiredFields = ['sku', 'name', 'category', 'stock', 'unit', 'price', 'priceunit', 'threshold'];
           const missingFields = requiredFields.filter(field => 
@@ -595,7 +534,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
           
           if (missingFields.length > 0) {
-            console.log(`Missing fields for item with SKU ${normalizedItem.sku || 'unknown'}:`, missingFields);
             results.failed++;
             results.errors.push(`Item with SKU ${normalizedItem.sku || 'unknown'}: Missing required fields: ${missingFields.join(', ')}`);
             continue;
@@ -618,7 +556,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const existingItem = inventoryItems.find(i => i.sku === cleanedItem.sku);
           
           if (existingItem) {
-            console.log(`Updating existing item with SKU: ${cleanedItem.sku}`);
             // Update existing item
             const updatedItem = await fileStorage.updateInventoryItem(existingItem.id, {
               ...cleanedItem,
@@ -632,7 +569,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               results.errors.push(`Failed to update item with SKU: ${cleanedItem.sku}`);
             }
           } else {
-            console.log(`Creating new item with SKU: ${cleanedItem.sku}`);
             // Create new item
             const newItem = await fileStorage.addInventoryItem({
               ...cleanedItem,
@@ -837,8 +773,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get information about the current user who is making the change
       const currentUser = getCurrentUser(req);
-      console.log("User creation performed by:", currentUser);
-      
       // Log the user creation activity
       const details = `Created new user: ${newUser.username} (ID: ${newUser.id}, Role: ${newUser.role})`;
       
@@ -882,8 +816,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get information about the current user who is making the change
       const currentUser = getCurrentUser(req);
-      console.log("User update performed by:", currentUser);
-      
       // Log the user update activity
       let details = `Updated user: ${user.username} (ID: ${user.id})`;
       if (updates.pin !== undefined) {

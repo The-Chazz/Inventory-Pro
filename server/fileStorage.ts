@@ -162,10 +162,8 @@ export class FileStorage implements IStorage {
       const filePath = path.join(this.dataDir, fileName);
       try {
         await fs.access(filePath);
-        console.log(`File exists: ${filePath}`);
       } catch (error) {
         // File doesn't exist, create it
-        console.log(`Creating file: ${filePath}`);
         await fs.writeFile(filePath, content, 'utf8');
       }
     }
@@ -179,13 +177,10 @@ export class FileStorage implements IStorage {
       // Create the data directory if it doesn't exist
       await fs.access(this.dataDir).catch(async () => {
         await fs.mkdir(this.dataDir, { recursive: true });
-        console.log(`Created data directory: ${this.dataDir}`);
       });
       
       // Initialize the data files
       await this.ensureDataFiles();
-      
-      console.log(`Using data directory: ${this.dataDir}`);
     } catch (error) {
       console.error(`Failed to initialize data directory: ${error}`);
     }

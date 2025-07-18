@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
-import { queryClient } from '@/lib/queryClient';
+import { queryClient, apiRequest } from '@/lib/queryClient';
 import { Separator } from '@/components/ui/separator';
 import { useAppContext } from '@/context/AppContext';
 import Header from '@/components/Header';
@@ -56,17 +56,11 @@ const ProfitTracker: React.FC = () => {
   // Update item mutation
   const updateItemMutation = useMutation({
     mutationFn: async (updates: Partial<InventoryItem>) => {
-      const response = await fetch(`/api/inventory/${selectedItemId}`, {
+      const response = await apiRequest({
+        url: `/api/inventory/${selectedItemId}`,
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updates),
+        data: updates,
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to update item');
-      }
       
       return response.json();
     },

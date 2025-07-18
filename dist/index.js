@@ -33,11 +33,6 @@ var config = {
   sessionMaxAge: parseInt(process.env.SESSION_MAX_AGE || "7200000", 10)
   // 2 hours in milliseconds
 };
-console.log("App configuration:");
-console.log("- File storage mode: enabled (always)");
-console.log("- Environment:", config.nodeEnv);
-console.log("- Port:", config.port);
-console.log("- Session max age:", config.sessionMaxAge, "ms");
 
 // server/index.ts
 import express3 from "express";
@@ -119,9 +114,7 @@ var FileStorage = class {
       const filePath = path2.join(this.dataDir, fileName);
       try {
         await fs2.access(filePath);
-        console.log(`File exists: ${filePath}`);
       } catch (error) {
-        console.log(`Creating file: ${filePath}`);
         await fs2.writeFile(filePath, content, "utf8");
       }
     }
@@ -133,10 +126,8 @@ var FileStorage = class {
     try {
       await fs2.access(this.dataDir).catch(async () => {
         await fs2.mkdir(this.dataDir, { recursive: true });
-        console.log(`Created data directory: ${this.dataDir}`);
       });
       await this.ensureDataFiles();
-      console.log(`Using data directory: ${this.dataDir}`);
     } catch (error) {
       console.error(`Failed to initialize data directory: ${error}`);
     }
@@ -707,7 +698,6 @@ var FileLogStorage = class {
     }
   }
   async createLog(log2) {
-    console.log("Creating log in file storage:", log2);
     const newLog = {
       id: this.nextId++,
       userId: log2.userId,
@@ -979,11 +969,6 @@ var uploadDir = path4.join(__dirname3, "uploads");
 var inventoryImagesDir = path4.join(uploadDir, "inventory");
 var logoImagesDir = path4.join(uploadDir, "logos");
 var csvDir = path4.join(uploadDir, "csv");
-console.log(`Creating upload directories if they don't exist:`);
-console.log(`- Upload dir: ${uploadDir}`);
-console.log(`- Inventory images dir: ${inventoryImagesDir}`);
-console.log(`- Logo images dir: ${logoImagesDir}`);
-console.log(`- CSV dir: ${csvDir}`);
 fs4.ensureDirSync(uploadDir);
 fs4.ensureDirSync(inventoryImagesDir);
 fs4.ensureDirSync(logoImagesDir);
@@ -1060,11 +1045,9 @@ async function processCsvFile(filePath) {
   const fs7 = await import("fs/promises");
   const { parse } = await import("csv-parse/sync");
   try {
-    console.log(`Processing CSV file: ${filePath}`);
     const content = await fs7.readFile(filePath, "utf-8");
     const records = parse(content, {
       columns: (header) => {
-        console.log("Original CSV headers:", header);
         return header.map((column) => {
           let normalizedColumn = column.toLowerCase().trim();
           if (normalizedColumn === "price unit" || normalizedColumn === "priceunit" || normalizedColumn === "unit price") {
@@ -1078,7 +1061,6 @@ async function processCsvFile(filePath) {
       skip_empty_lines: true,
       trim: true
     });
-    console.log(`Processed ${records.length} records from CSV`);
     const standardizedRecords = records.map((record) => {
       const normalizedRecord = {};
       Object.keys(record).forEach((key) => {
@@ -1228,7 +1210,6 @@ async function registerRoutes(app2) {
         return res.status(404).json({ error: "Item not found" });
       }
       const currentUser = getCurrentUser(req);
-      console.log("Inventory update attempted by:", currentUser);
       const hasProfitUpdates = req.body.costPrice !== void 0 || req.body.profitMargin !== void 0 || req.body.profitType !== void 0;
       if (hasProfitUpdates && !["Administrator", "Manager"].includes(currentUser.role)) {
         await ActivityLogger.logInventoryActivity(
@@ -1307,7 +1288,6 @@ async function registerRoutes(app2) {
       if (!success) {
         return res.status(404).json({ error: "Failed to delete item" });
       }
-      console.log("Inventory delete performed by:", currentUser);
       const details = `Deleted item: ${item.name} (ID: ${item.id}, SKU: ${item.sku}, Stock: ${item.stock})`;
       await ActivityLogger.logInventoryActivity(
         currentUser.id,
@@ -1323,17 +1303,9 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/inventory/csv-upload", csvUpload.single("file"), async (req, res) => {
     try {
-      console.log("CSV upload request received");
       if (!req.file) {
-        console.log("No CSV file received in request");
         return res.status(400).json({ error: "No file uploaded" });
       }
-      console.log("CSV file received:", {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        path: req.file.path,
-        size: req.file.size
-      });
       const csvItems = await processCsvFile(req.file.path);
       const normalizedItems = csvItems.map((item, index) => {
         const normalizedItem = {};
@@ -1346,10 +1318,8 @@ async function registerRoutes(app2) {
         if (!normalizedItem.priceunit && (normalizedItem["price unit"] || normalizedItem.price_unit || normalizedItem["unit price"])) {
           normalizedItem.priceunit = normalizedItem["price unit"] || normalizedItem.price_unit || normalizedItem["unit price"];
         }
-        console.log(`Item ${index + 1} normalized fields:`, Object.keys(normalizedItem));
         return normalizedItem;
       });
-      console.log(`Successfully processed ${normalizedItems.length} items from CSV`);
       res.json({
         success: true,
         items: normalizedItems,
@@ -1365,19 +1335,10 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/inventory/image-upload", inventoryImageUpload.single("image"), async (req, res) => {
     try {
-      console.log("Inventory image upload request received");
       if (!req.file) {
-        console.log("No file received in request");
         return res.status(400).json({ error: "No image uploaded" });
       }
-      console.log("File received:", {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        path: req.file.path,
-        size: req.file.size
-      });
       const imageUrl = `/uploads/inventory/${req.file.filename}`;
-      console.log("Generated image URL:", imageUrl);
       res.json({
         success: true,
         imageUrl,
@@ -1393,26 +1354,15 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/settings/logo-upload", logoImageUpload.single("logo"), async (req, res) => {
     try {
-      console.log("Store logo upload request received");
       if (!req.file) {
-        console.log("No logo file received in request");
         return res.status(400).json({ error: "No logo image uploaded" });
       }
-      console.log("Logo file received:", {
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        path: req.file.path,
-        size: req.file.size
-      });
       const logoUrl = `/uploads/logos/${req.file.filename}`;
-      console.log("Generated logo URL:", logoUrl);
       const storeSettings = await fileStorage.getStoreSettings();
-      console.log("Current store settings:", storeSettings);
       await fileStorage.updateStoreSettings({
         ...storeSettings,
         storeLogo: logoUrl
       });
-      console.log("Updated store settings with new logo");
       const currentUser = getCurrentUser(req);
       await ActivityLogger.logSettingsActivity(
         currentUser.id,
@@ -1435,13 +1385,10 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/inventory/bulk", async (req, res) => {
     try {
-      console.log("Bulk inventory import request received");
       const { items } = req.body;
       if (!items || !Array.isArray(items) || items.length === 0) {
-        console.log("Invalid or empty items array received:", items);
         return res.status(400).json({ error: "Invalid or empty items array" });
       }
-      console.log(`Processing ${items.length} items for bulk import`);
       const results = {
         updated: 0,
         created: 0,
@@ -1457,14 +1404,11 @@ async function registerRoutes(app2) {
               normalizedItem[key.toLowerCase()] = item[key];
             }
           });
-          console.log(`Processing item with SKU: ${normalizedItem.sku || "unknown"}`);
-          console.log("Item fields:", Object.keys(normalizedItem));
           const requiredFields = ["sku", "name", "category", "stock", "unit", "price", "priceunit", "threshold"];
           const missingFields = requiredFields.filter(
             (field) => normalizedItem[field] === void 0 || normalizedItem[field] === null || normalizedItem[field] === ""
           );
           if (missingFields.length > 0) {
-            console.log(`Missing fields for item with SKU ${normalizedItem.sku || "unknown"}:`, missingFields);
             results.failed++;
             results.errors.push(`Item with SKU ${normalizedItem.sku || "unknown"}: Missing required fields: ${missingFields.join(", ")}`);
             continue;
@@ -1483,7 +1427,6 @@ async function registerRoutes(app2) {
           };
           const existingItem = inventoryItems.find((i) => i.sku === cleanedItem.sku);
           if (existingItem) {
-            console.log(`Updating existing item with SKU: ${cleanedItem.sku}`);
             const updatedItem = await fileStorage.updateInventoryItem(existingItem.id, {
               ...cleanedItem,
               status: cleanedItem.stock < cleanedItem.threshold ? "Low Stock" : "In Stock"
@@ -1495,7 +1438,6 @@ async function registerRoutes(app2) {
               results.errors.push(`Failed to update item with SKU: ${cleanedItem.sku}`);
             }
           } else {
-            console.log(`Creating new item with SKU: ${cleanedItem.sku}`);
             const newItem = await fileStorage.addInventoryItem({
               ...cleanedItem,
               status: cleanedItem.stock < cleanedItem.threshold ? "Low Stock" : "In Stock"
@@ -1647,7 +1589,6 @@ async function registerRoutes(app2) {
     try {
       const newUser = await fileStorage.createUser(req.body);
       const currentUser = getCurrentUser(req);
-      console.log("User creation performed by:", currentUser);
       const details = `Created new user: ${newUser.username} (ID: ${newUser.id}, Role: ${newUser.role})`;
       await ActivityLogger.logUserActivity(
         currentUser.id,
@@ -1678,7 +1619,6 @@ async function registerRoutes(app2) {
         return res.status(500).json({ error: "Failed to update user" });
       }
       const currentUser = getCurrentUser(req);
-      console.log("User update performed by:", currentUser);
       let details = `Updated user: ${user.username} (ID: ${user.id})`;
       if (updates.pin !== void 0) {
         details += ", PIN was changed";
@@ -2027,11 +1967,13 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 var vite_config_default = defineConfig({
   plugins: [
     react(),
-    runtimeErrorOverlay(),
-    ...process.env.NODE_ENV !== "production" && process.env.REPL_ID !== void 0 ? [
-      await import("@replit/vite-plugin-cartographer").then(
-        (m) => m.cartographer()
-      )
+    ...process.env.NODE_ENV !== "production" ? [
+      runtimeErrorOverlay(),
+      ...process.env.REPL_ID !== void 0 ? [
+        await import("@replit/vite-plugin-cartographer").then(
+          (m) => m.cartographer()
+        )
+      ] : []
     ] : []
   ],
   resolve: {

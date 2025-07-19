@@ -111,8 +111,8 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
             normalizedItem[key.toLowerCase()] = item[key];
           });
           
-          // Check required fields (using lowercase for case-insensitivity)
-          const requiredFields = ['sku', 'name', 'category', 'stock', 'unit', 'price', 'priceunit', 'threshold'];
+          // Check required fields (using lowercase for case-insensitivity, excluding stock which can be blank)
+          const requiredFields = ['sku', 'name', 'category', 'unit', 'price', 'priceunit', 'threshold'];
           const missingFields = requiredFields.filter(field => 
             (normalizedItem[field] === undefined || normalizedItem[field] === '') && 
             normalizedItem[field] !== 0
@@ -122,21 +122,39 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
             throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
           }
           
+          // Skip items with blank stock (don't include them in parsed rows)
+          if (normalizedItem.stock === undefined || 
+              normalizedItem.stock === null || 
+              normalizedItem.stock === '' ||
+              String(normalizedItem.stock).trim() === '') {
+            return; // Skip this item
+          }
+          
           // Copy normalized values back to the item
-          requiredFields.forEach(field => {
+          const allFields = [...requiredFields, 'stock']; // Include stock for copying
+          allFields.forEach(field => {
             if (normalizedItem[field] !== undefined) {
               item[field] = normalizedItem[field];
             }
           });
           
-          // Ensure numeric fields are actually numbers
-          ['stock', 'price', 'threshold'].forEach(field => {
+          // Ensure numeric fields are actually numbers (skip stock validation here since it can be blank)
+          ['price', 'threshold'].forEach(field => {
             const value = parseFloat(item[field]);
             if (isNaN(value)) {
               throw new Error(`Invalid number for ${field}: ${item[field]}`);
             }
             item[field] = value;
           });
+          
+          // Handle stock separately since it can be blank
+          if (item.stock !== undefined && item.stock !== '') {
+            const stockValue = parseFloat(item.stock);
+            if (isNaN(stockValue)) {
+              throw new Error(`Invalid number for stock: ${item.stock}`);
+            }
+            item.stock = stockValue;
+          }
           
           parsedRows.push(item as CSVRow);
         } catch (error: any) {
@@ -235,7 +253,7 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
         
         toast({
           title: "Bulk Update Complete",
-          description: `Successfully updated ${result.updated} items, added ${result.created} new items.`
+          description: `Successfully updated ${result.updated} items, added ${result.created} new items${result.skipped ? `, skipped ${result.skipped} items with blank quantities` : ''}.`
         });
         
         // Invalidate inventory queries to refresh data
@@ -383,14 +401,19 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
         )}
         
         {/* Action Buttons */}
-        <div className="flex justify-end space-x-3 mt-6">
+        <div className="flex justify-between items-center mt-6">
           <Button
             variant="outline"
             onClick={onCancel}
             disabled={isSubmitting}
+            className="inline-flex items-center"
           >
-            Cancel
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Inventory
           </Button>
+          <div className="flex space-x-3">
           <Button
             disabled={!file || errors.length > 0 || isValidating || isSubmitting}
             onClick={handleSubmit}
@@ -407,6 +430,7 @@ const BulkInventoryImport: React.FC<BulkInventoryImportProps> = ({
               "Import Inventory"
             )}
           </Button>
+          </div>
         </div>
       </div>
     </Card>

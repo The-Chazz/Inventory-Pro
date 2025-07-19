@@ -647,6 +647,15 @@
       "category": "inventory",
       "details": "Added item: Test New Item (SKU: NEW-001), Quantity: 15 each",
       "timestamp": "2025-07-19T08:34:30.695Z"
+    },
+    {
+      "id": 73,
+      "userId": 0,
+      "username": "system",
+      "action": "Bulk Inventory Import",
+      "category": "inventory",
+      "details": "Bulk import: 2 created, 0 updated, 0 failed, 0 skipped (blank quantity)",
+      "timestamp": "2025-07-19T08:36:28.936Z"
     }
   ]
 }

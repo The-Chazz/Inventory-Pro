@@ -25,11 +25,60 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 /**
+ * Resets the CSV template to its original clean state
+ */
+const resetCsvTemplate = async () => {
+  try {
+    const csvTemplatePaths = [
+      path.join(__dirname, '../client/public/sample-inventory-import.csv'),
+      path.join(__dirname, '../dist/public/sample-inventory-import.csv')
+    ];
+    
+    // Original clean CSV template content
+    const cleanCsvContent = `sku,name,category,stock,unit,price,priceUnit,threshold,barcode
+GRC-001,Brown Rice,Grains,100,kg,2.50,kg,20,8901234567890
+GRC-002,White Basmati Rice,Grains,80,kg,3.75,kg,15,8901234567891
+GRC-003,Long Grain Rice,Grains,120,kg,2.25,kg,25,8901234567892
+FRT-001,Apples,Fruits,50,kg,1.99,kg,10,8901234567893
+FRT-002,Bananas,Fruits,60,kg,1.50,kg,15,8901234567894
+FRT-003,Oranges,Fruits,45,kg,2.25,kg,10,8901234567895
+VEG-001,Tomatoes,Vegetables,40,kg,1.80,kg,8,8901234567896
+VEG-002,Potatoes,Vegetables,100,kg,1.20,kg,20,8901234567897
+VEG-003,Onions,Vegetables,80,kg,1.10,kg,15,8901234567898
+DRY-001,Pasta,Dry Goods,60,pack,1.99,each,10,8901234567899
+DRY-002,Flour,Dry Goods,40,kg,1.50,kg,8,8901234567900
+DRY-003,Sugar,Dry Goods,50,kg,2.20,kg,10,8901234567901
+BVG-001,Milk,Beverages,30,liter,2.50,liter,10,8901234567902
+BVG-002,Orange Juice,Beverages,25,liter,3.75,liter,5,8901234567903
+BVG-003,Coffee,Beverages,20,pack,8.50,each,5,8901234567904`;
+    
+    // Reset both template locations
+    for (const csvPath of csvTemplatePaths) {
+      try {
+        await fs.writeFile(csvPath, cleanCsvContent);
+        console.log(`Reset CSV template at ${csvPath} to clean state`);
+      } catch (error) {
+        console.warn(`Could not reset CSV template at ${csvPath}:`, error);
+      }
+    }
+  } catch (error) {
+    console.error('Error resetting CSV template:', error);
+  }
+};
+
+/**
  * Updates the CSV template file with a new inventory item (with blank stock)
  * @param item - The inventory item to add to the template
+ * @param isTestItem - Whether this is a test item that should not be persisted in the template
  */
-const updateCsvTemplate = async (item: any) => {
+const updateCsvTemplate = async (item: any, isTestItem: boolean = false) => {
   try {
+    // Don't add test items to the CSV template
+    if (isTestItem) {
+      console.log(`Skipping test item ${item.sku} from CSV template update`);
+      return;
+    }
+    
     const csvTemplatePaths = [
       path.join(__dirname, '../client/public/sample-inventory-import.csv'),
       path.join(__dirname, '../dist/public/sample-inventory-import.csv')
@@ -259,7 +308,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newItem = await fileStorage.addInventoryItem(req.body);
       
       // Update CSV template with the new item (with blank stock)
-      await updateCsvTemplate(newItem);
+      // Don't add test items to the template (identified by having 'test' in name or SKU)
+      const isTestItem = /test/i.test(newItem.name) || /test/i.test(newItem.sku);
+      await updateCsvTemplate(newItem, isTestItem);
       
       // Log inventory creation
       const currentUser = getCurrentUser(req);
@@ -320,10 +371,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Access denied: Stocker accounts cannot modify prices" });
       }
       
-      const updatedItem = await fileStorage.updateInventoryItem(id, req.body);
+      // Check if stock or threshold is being updated to recalculate status
+      let updateData = { ...req.body };
+      
+      // If stock or threshold is being updated, recalculate the status
+      if (req.body.stock !== undefined || req.body.threshold !== undefined) {
+        const newStock = req.body.stock !== undefined ? req.body.stock : originalItem.stock;
+        const newThreshold = req.body.threshold !== undefined ? req.body.threshold : originalItem.threshold;
+        updateData.status = newStock <= newThreshold ? 'Low Stock' : 'In Stock';
+      }
+      
+      const updatedItem = await fileStorage.updateInventoryItem(id, updateData);
       
       if (!updatedItem) {
         return res.status(404).json({ error: "Failed to update item" });
+      }
+      
+      // Update low stock statistics if threshold status changed
+      if (req.body.stock !== undefined || req.body.threshold !== undefined) {
+        const oldStatus = originalItem.stock <= originalItem.threshold;
+        const newStatus = updatedItem.stock <= updatedItem.threshold;
+        
+        if (oldStatus !== newStatus) {
+          const stats = await fileStorage.getStats();
+          if (oldStatus && !newStatus) {
+            // Item moved from low stock to in stock
+            await fileStorage.updateStats({ 
+              lowStockItems: Math.max(0, stats.lowStockItems - 1) 
+            });
+          } else if (!oldStatus && newStatus) {
+            // Item moved from in stock to low stock
+            await fileStorage.updateStats({ 
+              lowStockItems: stats.lowStockItems + 1 
+            });
+          }
+        }
       }
       
       // Log the inventory update activity
@@ -1214,6 +1296,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         details: errorMessage,
         logId: req.params.id
       });
+    }
+  });
+
+  /**
+   * Admin endpoint to reset CSV template to clean state
+   * This removes any test data that may have been added to the template
+   */
+  app.post("/api/admin/reset-csv-template", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const currentUser = getCurrentUser(req);
+      
+      // Reset the CSV template
+      await resetCsvTemplate();
+      
+      // Log the reset activity
+      await ActivityLogger.logInventoryActivity(
+        currentUser.id,
+        currentUser.username,
+        LOG_ACTIONS.INVENTORY.BULK_IMPORT,
+        "Reset CSV template to clean state"
+      );
+      
+      res.json({ message: "CSV template reset to clean state successfully" });
+    } catch (error) {
+      console.error("Error resetting CSV template:", error);
+      res.status(500).json({ error: "Failed to reset CSV template" });
     }
   });
 

@@ -229,7 +229,11 @@ var FileStorage = class {
     const items = await this.readData("inventory.json", "items");
     const index = items.findIndex((item) => item.id === id);
     if (index !== -1) {
-      items[index] = { ...items[index], ...updates };
+      const updatedItem = { ...items[index], ...updates };
+      if (updates.stock !== void 0 || updates.threshold !== void 0) {
+        updatedItem.status = updatedItem.stock <= updatedItem.threshold ? "Low Stock" : "In Stock";
+      }
+      items[index] = updatedItem;
       await this.writeData("inventory.json", "items", items);
       return items[index];
     }
@@ -1081,8 +1085,46 @@ async function processCsvFile(filePath) {
 // server/routes.ts
 var __filename4 = fileURLToPath4(import.meta.url);
 var __dirname4 = dirname3(__filename4);
-var updateCsvTemplate = async (item) => {
+var resetCsvTemplate = async () => {
   try {
+    const csvTemplatePaths = [
+      path5.join(__dirname4, "../client/public/sample-inventory-import.csv"),
+      path5.join(__dirname4, "../dist/public/sample-inventory-import.csv")
+    ];
+    const cleanCsvContent = `sku,name,category,stock,unit,price,priceUnit,threshold,barcode
+GRC-001,Brown Rice,Grains,100,kg,2.50,kg,20,8901234567890
+GRC-002,White Basmati Rice,Grains,80,kg,3.75,kg,15,8901234567891
+GRC-003,Long Grain Rice,Grains,120,kg,2.25,kg,25,8901234567892
+FRT-001,Apples,Fruits,50,kg,1.99,kg,10,8901234567893
+FRT-002,Bananas,Fruits,60,kg,1.50,kg,15,8901234567894
+FRT-003,Oranges,Fruits,45,kg,2.25,kg,10,8901234567895
+VEG-001,Tomatoes,Vegetables,40,kg,1.80,kg,8,8901234567896
+VEG-002,Potatoes,Vegetables,100,kg,1.20,kg,20,8901234567897
+VEG-003,Onions,Vegetables,80,kg,1.10,kg,15,8901234567898
+DRY-001,Pasta,Dry Goods,60,pack,1.99,each,10,8901234567899
+DRY-002,Flour,Dry Goods,40,kg,1.50,kg,8,8901234567900
+DRY-003,Sugar,Dry Goods,50,kg,2.20,kg,10,8901234567901
+BVG-001,Milk,Beverages,30,liter,2.50,liter,10,8901234567902
+BVG-002,Orange Juice,Beverages,25,liter,3.75,liter,5,8901234567903
+BVG-003,Coffee,Beverages,20,pack,8.50,each,5,8901234567904`;
+    for (const csvPath of csvTemplatePaths) {
+      try {
+        await fs5.writeFile(csvPath, cleanCsvContent);
+        console.log(`Reset CSV template at ${csvPath} to clean state`);
+      } catch (error) {
+        console.warn(`Could not reset CSV template at ${csvPath}:`, error);
+      }
+    }
+  } catch (error) {
+    console.error("Error resetting CSV template:", error);
+  }
+};
+var updateCsvTemplate = async (item, isTestItem = false) => {
+  try {
+    if (isTestItem) {
+      console.log(`Skipping test item ${item.sku} from CSV template update`);
+      return;
+    }
     const csvTemplatePaths = [
       path5.join(__dirname4, "../client/public/sample-inventory-import.csv"),
       path5.join(__dirname4, "../dist/public/sample-inventory-import.csv")
@@ -1208,7 +1250,8 @@ async function registerRoutes(app2) {
         }
       }
       const newItem = await fileStorage.addInventoryItem(req.body);
-      await updateCsvTemplate(newItem);
+      const isTestItem = /test/i.test(newItem.name) || /test/i.test(newItem.sku);
+      await updateCsvTemplate(newItem, isTestItem);
       const currentUser = getCurrentUser(req);
       if (currentUser) {
         await ActivityLogger.logInventoryActivity(
@@ -1251,9 +1294,31 @@ async function registerRoutes(app2) {
         );
         return res.status(403).json({ error: "Access denied: Stocker accounts cannot modify prices" });
       }
-      const updatedItem = await fileStorage.updateInventoryItem(id, req.body);
+      let updateData = { ...req.body };
+      if (req.body.stock !== void 0 || req.body.threshold !== void 0) {
+        const newStock = req.body.stock !== void 0 ? req.body.stock : originalItem.stock;
+        const newThreshold = req.body.threshold !== void 0 ? req.body.threshold : originalItem.threshold;
+        updateData.status = newStock <= newThreshold ? "Low Stock" : "In Stock";
+      }
+      const updatedItem = await fileStorage.updateInventoryItem(id, updateData);
       if (!updatedItem) {
         return res.status(404).json({ error: "Failed to update item" });
+      }
+      if (req.body.stock !== void 0 || req.body.threshold !== void 0) {
+        const oldStatus = originalItem.stock <= originalItem.threshold;
+        const newStatus = updatedItem.stock <= updatedItem.threshold;
+        if (oldStatus !== newStatus) {
+          const stats = await fileStorage.getStats();
+          if (oldStatus && !newStatus) {
+            await fileStorage.updateStats({
+              lowStockItems: Math.max(0, stats.lowStockItems - 1)
+            });
+          } else if (!oldStatus && newStatus) {
+            await fileStorage.updateStats({
+              lowStockItems: stats.lowStockItems + 1
+            });
+          }
+        }
       }
       let details = `Updated item: ${originalItem.name} (ID: ${originalItem.id})`;
       if (req.body.stock !== void 0 && originalItem.stock !== req.body.stock) {
@@ -1913,6 +1978,22 @@ async function registerRoutes(app2) {
         details: errorMessage,
         logId: req.params.id
       });
+    }
+  });
+  app2.post("/api/admin/reset-csv-template", isAdmin, async (req, res) => {
+    try {
+      const currentUser = getCurrentUser(req);
+      await resetCsvTemplate();
+      await ActivityLogger.logInventoryActivity(
+        currentUser.id,
+        currentUser.username,
+        LOG_ACTIONS.INVENTORY.BULK_IMPORT,
+        "Reset CSV template to clean state"
+      );
+      res.json({ message: "CSV template reset to clean state successfully" });
+    } catch (error) {
+      console.error("Error resetting CSV template:", error);
+      res.status(500).json({ error: "Failed to reset CSV template" });
     }
   });
   app2.post("/api/login", async (req, res) => {

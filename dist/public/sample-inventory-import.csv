@@ -14,3 +14,4 @@ DRY-003,Sugar,Dry Goods,50,kg,2.20,kg,10,8901234567901
 BVG-001,Milk,Beverages,30,liter,2.50,liter,10,8901234567902
 BVG-002,Orange Juice,Beverages,25,liter,3.75,liter,5,8901234567903
 BVG-003,Coffee,Beverages,20,pack,8.50,each,5,8901234567904
+REG-001,Regular Product,Other,,each,5,each,5,

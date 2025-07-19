@@ -665,6 +665,42 @@
       "category": "authentication",
       "details": "User logged in successfully",
       "timestamp": "2025-07-19T09:04:56.975Z"
+    },
+    {
+      "id": 75,
+      "userId": 1,
+      "username": "admin",
+      "action": "User Login",
+      "category": "authentication",
+      "details": "User logged in successfully",
+      "timestamp": "2025-07-19T09:43:46.930Z"
+    },
+    {
+      "id": 76,
+      "userId": 1,
+      "username": "admin",
+      "action": "Inventory Item Created",
+      "category": "inventory",
+      "details": "Added item: Test Item (SKU: TEST-001), Quantity: 2 each",
+      "timestamp": "2025-07-19T09:45:57.122Z"
+    },
+    {
+      "id": 77,
+      "userId": 1,
+      "username": "admin",
+      "action": "Inventory Item Updated",
+      "category": "inventory",
+      "details": "Updated item: Test Item (ID: 1), Stock changed from 2 to 10",
+      "timestamp": "2025-07-19T09:48:00.800Z"
+    },
+    {
+      "id": 78,
+      "userId": 1,
+      "username": "admin",
+      "action": "Inventory Item Created",
+      "category": "inventory",
+      "details": "Added item: Regular Product (SKU: REG-001), Quantity: 50 each",
+      "timestamp": "2025-07-19T09:50:07.492Z"
     }
   ]
 }

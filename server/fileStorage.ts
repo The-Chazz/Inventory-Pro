@@ -308,7 +308,14 @@ export class FileStorage implements IStorage {
     const index = items.findIndex(item => item.id === id);
     
     if (index !== -1) {
-      items[index] = { ...items[index], ...updates };
+      const updatedItem = { ...items[index], ...updates };
+      
+      // Always recalculate status if stock or threshold is updated
+      if (updates.stock !== undefined || updates.threshold !== undefined) {
+        updatedItem.status = updatedItem.stock <= updatedItem.threshold ? 'Low Stock' : 'In Stock';
+      }
+      
+      items[index] = updatedItem;
       await this.writeData('inventory.json', 'items', items);
       return items[index];
     }

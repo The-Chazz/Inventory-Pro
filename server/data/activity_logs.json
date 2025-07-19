@@ -656,6 +656,15 @@
       "category": "inventory",
       "details": "Bulk import: 2 created, 0 updated, 0 failed, 0 skipped (blank quantity)",
       "timestamp": "2025-07-19T08:36:28.936Z"
+    },
+    {
+      "id": 74,
+      "userId": 1,
+      "username": "admin",
+      "action": "User Login",
+      "category": "authentication",
+      "details": "User logged in successfully",
+      "timestamp": "2025-07-19T09:04:56.975Z"
     }
   ]
 }

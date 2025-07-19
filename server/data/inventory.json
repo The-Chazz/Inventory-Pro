@@ -13,6 +13,20 @@
       "barcode": "",
       "id": 1,
       "status": "In Stock"
+    },
+    {
+      "name": "Milk",
+      "sku": "MILK001",
+      "category": "Dairy",
+      "stock": 3,
+      "unit": "liter",
+      "price": 250,
+      "priceUnit": "liter",
+      "threshold": 5,
+      "image": "",
+      "barcode": "",
+      "id": 2,
+      "status": "Low Stock"
     }
   ]
 }

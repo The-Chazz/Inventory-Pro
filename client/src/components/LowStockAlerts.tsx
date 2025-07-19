@@ -18,7 +18,7 @@ interface InventoryItem {
 }
 
 const LowStockAlerts: React.FC = () => {
-  // Fetch low stock items
+  // Fetch low stock items with auto-refresh
   const { data: lowStockItems, isLoading, error } = useQuery({
     queryKey: ['/api/alerts/low-stock'],
     queryFn: async () => {
@@ -27,7 +27,9 @@ const LowStockAlerts: React.FC = () => {
         return await response.json() as InventoryItem[];
       }
       return [] as InventoryItem[];
-    }
+    },
+    refetchInterval: 3000, // Refresh every 3 seconds for consistent real-time updates
+    refetchOnWindowFocus: true // Refresh when tab gets focus
   });
 
   // Show all low stock alerts with scrollable interface

@@ -45,7 +45,7 @@ const formatDate = (dateString: string): string => {
 };
 
 const RecentSales: React.FC = () => {
-  // Fetch sales data from API
+  // Fetch sales data from API with auto-refresh
   const { data: sales, isLoading, error } = useQuery({
     queryKey: ['/api/sales'],
     queryFn: async () => {
@@ -54,7 +54,9 @@ const RecentSales: React.FC = () => {
         return await response.json() as Sale[];
       }
       return [] as Sale[];
-    }
+    },
+    refetchInterval: 3000, // Refresh every 3 seconds for consistent real-time updates
+    refetchOnWindowFocus: true // Refresh when tab gets focus
   });
 
   // Sort sales by date (newest first) and take the most recent 5

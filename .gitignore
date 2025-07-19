@@ -43,6 +43,9 @@ ecosystem.config.js
 # Launcher logs
 launcher.log
 
+# Launcher error reports  
+error_report_*.txt
+
 # Node.js installers
 node-installer.msi
 node-v*.msi

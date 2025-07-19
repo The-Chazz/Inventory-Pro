@@ -32,50 +32,50 @@ echo [%DATE% %TIME%] Inventory Pro Launcher started > "%LOG_FILE%"
 :: Function to log messages
 call :log "Starting Inventory Pro Launcher"
 
-echo [1/6] Checking Node.js installation...
+call :log_step "[1/6] Checking Node.js installation..."
 call :check_nodejs
 set "NODE_CHECK_RESULT=!errorlevel!"
 if !NODE_CHECK_RESULT! neq 0 (
     echo   ✗ Node.js not found or not functional
-    call :log "Node.js check failed with exit code !NODE_CHECK_RESULT!"
+    call :report_error "Node.js check failed" "!NODE_CHECK_RESULT!" "Install Node.js from https://nodejs.org/ or ensure it's properly configured"
     goto :error_exit
 ) else (
     echo   ✓ Node.js installation verified successfully
-    call :log "Node.js installation verified successfully"
+    call :log_success "Node.js installation verified successfully"
 )
 
-echo [2/6] Installing Node.js modules...
+call :log_step "[2/6] Installing Node.js modules..."
 call :install_modules
 if !errorlevel! neq 0 (
-    call :log "Node modules installation failed"
+    call :report_error "Node modules installation failed" "!errorlevel!" "Check internet connection and npm configuration"
     goto :error_exit
 )
 
-echo [3/6] Configuring PM2 service...
+call :log_step "[3/6] Configuring PM2 service..."
 call :configure_pm2
 if !errorlevel! neq 0 (
-    call :log "PM2 configuration failed"
+    call :report_error "PM2 configuration failed" "!errorlevel!" "Ensure npm is working and try installing PM2 manually: npm install -g pm2"
     goto :error_exit
 )
 
-echo [4/6] Updating dependencies...
+call :log_step "[4/6] Updating dependencies..."
 call :update_dependencies
 if !errorlevel! neq 0 (
-    call :log "Dependency update failed"
+    call :report_error "Dependency update failed" "!errorlevel!" "Check package.json and network connectivity"
     goto :error_exit
 )
 
-echo [5/6] Building and starting application...
+call :log_step "[5/6] Building and starting application..."
 call :build_and_start
 if !errorlevel! neq 0 (
-    call :log "Application build/start failed"
+    call :report_error "Application build/start failed" "!errorlevel!" "Check build logs and ensure all dependencies are installed"
     goto :error_exit
 )
 
-echo [6/6] Launching application...
+call :log_step "[6/6] Launching application..."
 call :launch_application
 if !errorlevel! neq 0 (
-    call :log "Application launch failed"
+    call :report_error "Application launch failed" "!errorlevel!" "Check if browser is available and application is running"
     goto :error_exit
 )
 
@@ -426,20 +426,36 @@ exit /b 0
 call :log "Building and starting application"
 echo   Building application...
 
+:: Clean previous build if it exists
+if exist "%SCRIPT_DIR%dist" (
+    echo   Cleaning previous build...
+    call :log "Cleaning previous build directory"
+    rmdir /s /q "%SCRIPT_DIR%dist" 2>nul
+)
+
 call :log "Running npm run build"
 npm run build 2>&1 | tee -a "%LOG_FILE%"
 
 if !errorlevel! neq 0 (
     echo   ✗ Build failed
-    call :log "Build failed"
+    call :log "Build failed with exit code !errorlevel!"
     exit /b 1
 )
 
-echo   ✓ Application built successfully
-call :log "Application built successfully"
+:: Verify build output exists and is valid
+call :verify_build_output
+if !errorlevel! neq 0 (
+    echo   ✗ Build verification failed
+    call :log "Build verification failed"
+    exit /b 1
+)
+
+echo   ✓ Application built and verified successfully
+call :log "Application built and verified successfully"
 
 :: Stop existing PM2 process if running
 echo   Stopping any existing instances...
+call :log "Stopping existing PM2 instances"
 pm2 stop !APP_NAME! >nul 2>&1
 pm2 delete !APP_NAME! >nul 2>&1
 
@@ -450,29 +466,37 @@ pm2 start ecosystem.config.js 2>&1 | tee -a "%LOG_FILE%"
 
 if !errorlevel! neq 0 (
     echo   ✗ Failed to start application
-    call :log "Failed to start application with PM2"
+    call :log "Failed to start application with PM2, exit code: !errorlevel!"
+    exit /b 1
+)
+
+:: Verify PM2 process is running
+call :verify_pm2_health
+if !errorlevel! neq 0 (
+    echo   ✗ PM2 health check failed
+    call :log "PM2 health check failed"
     exit /b 1
 )
 
 :: Save PM2 configuration
 pm2 save >nul 2>&1
+call :log "PM2 configuration saved"
 
-echo   ✓ Application started successfully
-call :log "Application started successfully"
+echo   ✓ Application started and verified successfully
+call :log "Application started and verified successfully"
 
-:: Wait for application to be ready
-echo   Waiting for application to be ready...
-timeout /t 10 >nul
-
-:: Check if application is responding
-powershell -Command "(New-Object Net.WebClient).DownloadString('!APP_URL!') | Out-Null" 2>nul
-if !errorlevel! equ 0 (
-    echo   ✓ Application is responding
-    call :log "Application is responding"
+:: Comprehensive application health check
+call :verify_application_health
+set "HEALTH_CHECK_RESULT=!errorlevel!"
+if !HEALTH_CHECK_RESULT! equ 0 (
+    echo   ✓ Application health check passed
+    call :log "Application health check passed"
     exit /b 0
 ) else (
-    echo   ⚠ Application may still be starting up
-    call :log "Application may still be starting up"
+    echo   ⚠ Application health check failed, but PM2 service is running
+    call :log "Application health check failed with exit code !HEALTH_CHECK_RESULT!"
+    echo   ⚠ The service may still be starting up or there may be configuration issues
+    echo   ⚠ Check logs with: pm2 logs !APP_NAME!
     exit /b 0
 )
 
@@ -530,21 +554,20 @@ goto :end
 :: Function: Error Exit
 :: ============================
 :error_exit
-call :log "Installation failed"
-echo.
-echo ========================================================
-echo          Installation Failed!
-echo ========================================================
-echo.
-echo ✗ The installation process encountered an error.
-echo.
-echo Please check the log file for details: %LOG_FILE%
-echo.
-echo Common solutions:
+call :report_error "Installation process failed" "%errorlevel%" "Check the detailed error report and log files"
+
+echo Common troubleshooting steps:
 echo   1. Ensure Node.js is installed (visit https://nodejs.org/)
-echo   2. Run as Administrator
+echo   2. Run as Administrator  
 echo   3. Check internet connection
-echo   4. Try running the script again
+echo   4. Verify antivirus is not blocking the installation
+echo   5. Try running the script again
+echo   6. Check Windows User Account Control settings
+echo.
+echo For advanced troubleshooting:
+echo   • Review the error report generated above
+echo   • Check PM2 logs if PM2 was installed: pm2 logs %APP_NAME%
+echo   • Verify system requirements and permissions
 echo.
 echo Press any key to exit...
 pause >nul
@@ -555,6 +578,104 @@ goto :end
 :: ============================
 :log
 echo [%DATE% %TIME%] %~1 >> "%LOG_FILE%"
+goto :eof
+
+:log_error
+echo [%DATE% %TIME%] ERROR: %~1 >> "%LOG_FILE%"
+echo [%DATE% %TIME%] ERROR: %~1
+goto :eof
+
+:log_warning
+echo [%DATE% %TIME%] WARNING: %~1 >> "%LOG_FILE%"
+echo [%DATE% %TIME%] WARNING: %~1
+goto :eof
+
+:log_success
+echo [%DATE% %TIME%] SUCCESS: %~1 >> "%LOG_FILE%"
+goto :eof
+
+:log_step
+echo [%DATE% %TIME%] STEP: %~1 >> "%LOG_FILE%"
+echo.
+echo ========================================================
+echo %~1
+echo ========================================================
+goto :eof
+
+:: ============================
+:: Function: Enhanced Error Reporting  
+:: ============================
+:report_error
+set "ERROR_MSG=%~1"
+set "ERROR_CODE=%~2"
+set "SUGGESTED_ACTION=%~3"
+
+call :log_error "!ERROR_MSG! (Exit Code: !ERROR_CODE!)"
+
+echo.
+echo ========================================================
+echo          Error Occurred
+echo ========================================================
+echo.
+echo ✗ Error: !ERROR_MSG!
+echo   Exit Code: !ERROR_CODE!
+if not "!SUGGESTED_ACTION!"=="" (
+    echo   Suggested Action: !SUGGESTED_ACTION!
+)
+echo.
+echo Log file location: %LOG_FILE%
+echo.
+
+:: Generate error report
+call :generate_error_report "!ERROR_MSG!" "!ERROR_CODE!"
+
+goto :eof
+
+:generate_error_report
+set "ERROR_MSG=%~1"  
+set "ERROR_CODE=%~2"
+set "ERROR_REPORT_FILE=%SCRIPT_DIR%error_report_%DATE:~0,4%%DATE:~5,2%%DATE:~8,2%_%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%.txt"
+
+(
+echo Inventory Pro Launcher - Error Report
+echo Generated: %DATE% %TIME%
+echo ================================================
+echo.
+echo Error Details:
+echo   Message: !ERROR_MSG!
+echo   Exit Code: !ERROR_CODE!
+echo   Script Directory: %SCRIPT_DIR%
+echo   Log File: %LOG_FILE%
+echo.
+echo System Information:
+echo   OS Version: %OS%
+echo   Computer Name: %COMPUTERNAME%
+echo   Username: %USERNAME%
+echo   Current Path: %PATH%
+echo.
+echo Node.js Information:
+node --version 2>&1 || echo   Node.js: Not available
+npm --version 2>&1 || echo   npm: Not available
+echo.
+echo PM2 Information:
+pm2 --version 2>&1 || echo   PM2: Not available
+pm2 list 2>&1 || echo   PM2 Process List: Not available
+echo.
+echo Port Information:
+netstat -an | findstr ":5000 " || echo   Port 5000: Not listening
+echo.
+echo Last 10 lines of launcher log:
+echo --------------------------------
+if exist "%LOG_FILE%" (
+    powershell -Command "Get-Content '%LOG_FILE%' | Select-Object -Last 10"
+) else (
+    echo   Log file not found
+)
+echo.
+) > "%ERROR_REPORT_FILE%"
+
+call :log "Error report generated: %ERROR_REPORT_FILE%"
+echo Error report saved to: %ERROR_REPORT_FILE%
 goto :eof
 
 :: ============================
@@ -704,6 +825,183 @@ if !NPM_MAJOR_VERSION! geq 6 (
     exit /b 1
 )
 goto :eof
+
+:: ============================
+:: Function: Verify Build Output
+:: ============================
+:verify_build_output
+call :log "Verifying build output"
+echo   Verifying build artifacts...
+
+:: Check if dist directory exists
+if not exist "%SCRIPT_DIR%dist" (
+    echo   ✗ Build output directory not found: %SCRIPT_DIR%dist
+    call :log "Build output directory not found: %SCRIPT_DIR%dist"
+    exit /b 1
+)
+
+:: Check if main server file exists
+if not exist "%SCRIPT_DIR%dist\index.js" (
+    echo   ✗ Server bundle not found: %SCRIPT_DIR%dist\index.js
+    call :log "Server bundle not found: %SCRIPT_DIR%dist\index.js"
+    exit /b 1
+)
+
+:: Check if client build output exists
+if not exist "%SCRIPT_DIR%dist\public" (
+    echo   ✗ Client build output not found: %SCRIPT_DIR%dist\public
+    call :log "Client build output not found: %SCRIPT_DIR%dist\public"
+    exit /b 1
+)
+
+:: Check if client index.html exists
+if not exist "%SCRIPT_DIR%dist\public\index.html" (
+    echo   ✗ Client index.html not found: %SCRIPT_DIR%dist\public\index.html
+    call :log "Client index.html not found: %SCRIPT_DIR%dist\public\index.html"
+    exit /b 1
+)
+
+:: Verify server bundle is not empty
+for %%A in ("%SCRIPT_DIR%dist\index.js") do set "SERVER_SIZE=%%~zA"
+if !SERVER_SIZE! lss 1000 (
+    echo   ✗ Server bundle appears to be too small: !SERVER_SIZE! bytes
+    call :log "Server bundle appears to be too small: !SERVER_SIZE! bytes"
+    exit /b 1
+)
+
+:: Verify server bundle contains expected content
+findstr /c:"express" "%SCRIPT_DIR%dist\index.js" >nul 2>&1
+if !errorlevel! neq 0 (
+    echo   ⚠ Server bundle may not contain expected Express framework
+    call :log "Server bundle may not contain expected Express framework"
+)
+
+echo   ✓ Build artifacts verified successfully
+call :log "Build verification completed - dist: %SCRIPT_DIR%dist, server: !SERVER_SIZE! bytes"
+exit /b 0
+
+:: ============================
+:: Function: Verify PM2 Health
+:: ============================
+:verify_pm2_health
+call :log "Verifying PM2 process health"
+echo   Verifying PM2 process status...
+
+:: Wait a moment for PM2 to initialize
+timeout /t 3 >nul
+
+:: Check if PM2 process is running
+pm2 describe !APP_NAME! >nul 2>&1
+if !errorlevel! neq 0 (
+    echo   ✗ PM2 process !APP_NAME! not found
+    call :log "PM2 process !APP_NAME! not found"
+    exit /b 1
+)
+
+:: Get process status
+for /f "tokens=*" %%i in ('pm2 jlist 2^>nul ^| findstr /i "!APP_NAME!"') do set "PM2_STATUS=%%i"
+
+:: Check if process status contains "online"
+echo !PM2_STATUS! | findstr /i "online" >nul 2>&1
+if !errorlevel! neq 0 (
+    echo   ✗ PM2 process !APP_NAME! is not in online status
+    call :log "PM2 process !APP_NAME! is not in online status"
+    echo   Process status: !PM2_STATUS!
+    call :log "Process status: !PM2_STATUS!"
+    exit /b 1
+)
+
+:: Check for restart count (high restart count indicates issues)
+for /f "tokens=*" %%i in ('pm2 jlist 2^>nul ^| findstr /i "restart_time"') do (
+    echo %%i | findstr /r "[5-9][0-9]" >nul 2>&1
+    if !errorlevel! equ 0 (
+        echo   ⚠ High restart count detected for PM2 process
+        call :log "High restart count detected for PM2 process"
+    )
+)
+
+echo   ✓ PM2 process health verified
+call :log "PM2 process health verification completed"
+exit /b 0
+
+:: ============================
+:: Function: Verify Application Health
+:: ============================
+:verify_application_health
+call :log "Performing comprehensive application health check"
+echo   Performing application health check...
+
+:: Wait for application to be ready
+echo   Waiting for application to initialize...
+timeout /t 10 >nul
+
+:: Check if the port is listening
+netstat -an | findstr ":!APP_PORT! " >nul 2>&1
+if !errorlevel! neq 0 (
+    echo   ✗ Application port !APP_PORT! is not listening
+    call :log "Application port !APP_PORT! is not listening"
+    exit /b 1
+)
+
+echo   ✓ Application port !APP_PORT! is listening
+call :log "Application port !APP_PORT! is listening"
+
+:: Test basic HTTP connectivity
+echo   Testing HTTP connectivity...
+powershell -Command "try { $response = Invoke-WebRequest -Uri '!APP_URL!' -TimeoutSec 10 -UseBasicParsing; if ($response.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+set "HTTP_TEST_RESULT=!errorlevel!"
+
+if !HTTP_TEST_RESULT! equ 0 (
+    echo   ✓ HTTP connectivity test passed
+    call :log "HTTP connectivity test passed"
+) else (
+    echo   ⚠ HTTP connectivity test failed
+    call :log "HTTP connectivity test failed"
+    
+    :: Additional diagnostic - check if it's a redirect or other issue
+    powershell -Command "try { $response = Invoke-WebRequest -Uri '!APP_URL!' -TimeoutSec 5 -UseBasicParsing; Write-Host 'Status:' $response.StatusCode } catch { Write-Host 'Error:' $_.Exception.Message }" 2>nul
+    
+    exit /b 1
+)
+
+:: Test if the application returns expected content (looking for HTML)
+echo   Testing application content...
+powershell -Command "try { $response = Invoke-WebRequest -Uri '!APP_URL!' -TimeoutSec 10 -UseBasicParsing; if ($response.Content -like '*html*') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+set "CONTENT_TEST_RESULT=!errorlevel!"
+
+if !CONTENT_TEST_RESULT! equ 0 (
+    echo   ✓ Application content test passed
+    call :log "Application content test passed"
+) else (
+    echo   ⚠ Application content test failed - may still be starting
+    call :log "Application content test failed - may still be starting"
+)
+
+:: Check PM2 logs for any immediate errors
+echo   Checking for startup errors...
+pm2 logs !APP_NAME! --lines 5 --nostream 2>&1 | findstr /i "error" >nul 2>&1
+if !errorlevel! equ 0 (
+    echo   ⚠ Recent errors detected in application logs
+    call :log "Recent errors detected in application logs"
+    echo   Check logs with: pm2 logs !APP_NAME!
+)
+
+:: Overall health assessment
+if !HTTP_TEST_RESULT! equ 0 (
+    if !CONTENT_TEST_RESULT! equ 0 (
+        echo   ✓ Application health check: EXCELLENT
+        call :log "Application health check: EXCELLENT - all tests passed"
+        exit /b 0
+    ) else (
+        echo   ✓ Application health check: GOOD - connectivity OK, content loading
+        call :log "Application health check: GOOD - connectivity OK, content may still be loading"
+        exit /b 0
+    )
+) else (
+    echo   ⚠ Application health check: POOR - connectivity issues detected
+    call :log "Application health check: POOR - connectivity issues detected"
+    exit /b 1
+)
 
 :end
 call :log "Launcher script finished"

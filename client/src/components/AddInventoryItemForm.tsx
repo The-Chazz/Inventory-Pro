@@ -425,14 +425,18 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
         </div>
 
         {/* Form Actions */}
-        <div className="flex justify-end space-x-3 mt-6">
+        <div className="flex justify-between items-center mt-6">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
           >
-            Cancel
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Inventory
           </button>
+          <div className="flex space-x-3">
           <button
             type="submit"
             disabled={isSubmitting}
@@ -450,6 +454,7 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
               "Save Item"
             )}
           </button>
+          </div>
         </div>
       </form>
     </div>

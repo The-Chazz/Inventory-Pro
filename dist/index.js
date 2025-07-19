@@ -40,6 +40,7 @@ import express3 from "express";
 // server/routes.ts
 import express from "express";
 import { createServer } from "http";
+import fs5 from "fs/promises";
 
 // server/fileStorage.ts
 import fs2 from "fs/promises";
@@ -1042,10 +1043,10 @@ var csvUpload = multer({
 });
 fs4.ensureDirSync(path4.join(uploadDir, "csv"));
 async function processCsvFile(filePath) {
-  const fs7 = await import("fs/promises");
+  const fs8 = await import("fs/promises");
   const { parse } = await import("csv-parse/sync");
   try {
-    const content = await fs7.readFile(filePath, "utf-8");
+    const content = await fs8.readFile(filePath, "utf-8");
     const records = parse(content, {
       columns: (header) => {
         return header.map((column) => {
@@ -1080,6 +1081,25 @@ async function processCsvFile(filePath) {
 // server/routes.ts
 var __filename4 = fileURLToPath4(import.meta.url);
 var __dirname4 = dirname3(__filename4);
+var updateCsvTemplate = async (item) => {
+  try {
+    const csvTemplatePaths = [
+      path5.join(__dirname4, "../client/public/sample-inventory-import.csv"),
+      path5.join(__dirname4, "../dist/public/sample-inventory-import.csv")
+    ];
+    const csvRow = `${item.sku},${item.name},${item.category},,${item.unit},${item.price},${item.priceUnit},${item.threshold},${item.barcode || ""}`;
+    for (const csvPath of csvTemplatePaths) {
+      try {
+        await fs5.appendFile(csvPath, "\n" + csvRow);
+        console.log(`Added item ${item.sku} to CSV template at ${csvPath}`);
+      } catch (error) {
+        console.warn(`Could not update CSV template at ${csvPath}:`, error);
+      }
+    }
+  } catch (error) {
+    console.error("Error updating CSV template:", error);
+  }
+};
 var getCurrentUser = (req) => {
   try {
     const userInfoHeader = req.headers["user-info"];
@@ -1188,6 +1208,7 @@ async function registerRoutes(app2) {
         }
       }
       const newItem = await fileStorage.addInventoryItem(req.body);
+      await updateCsvTemplate(newItem);
       const currentUser = getCurrentUser(req);
       if (currentUser) {
         await ActivityLogger.logInventoryActivity(
@@ -1393,6 +1414,7 @@ async function registerRoutes(app2) {
         updated: 0,
         created: 0,
         failed: 0,
+        skipped: 0,
         errors: []
       };
       const inventoryItems = await fileStorage.getInventory();
@@ -1404,13 +1426,18 @@ async function registerRoutes(app2) {
               normalizedItem[key.toLowerCase()] = item[key];
             }
           });
-          const requiredFields = ["sku", "name", "category", "stock", "unit", "price", "priceunit", "threshold"];
+          const requiredFields = ["sku", "name", "category", "unit", "price", "priceunit", "threshold"];
           const missingFields = requiredFields.filter(
             (field) => normalizedItem[field] === void 0 || normalizedItem[field] === null || normalizedItem[field] === ""
           );
           if (missingFields.length > 0) {
             results.failed++;
             results.errors.push(`Item with SKU ${normalizedItem.sku || "unknown"}: Missing required fields: ${missingFields.join(", ")}`);
+            continue;
+          }
+          if (normalizedItem.stock === void 0 || normalizedItem.stock === null || normalizedItem.stock === "" || String(normalizedItem.stock).trim() === "") {
+            console.log(`Skipping item with SKU ${normalizedItem.sku}: blank stock quantity`);
+            results.skipped++;
             continue;
           }
           const cleanedItem = {
@@ -1456,7 +1483,7 @@ async function registerRoutes(app2) {
         }
       }
       const currentUser = getCurrentUser(req);
-      const details = `Bulk import: ${results.created} created, ${results.updated} updated, ${results.failed} failed`;
+      const details = `Bulk import: ${results.created} created, ${results.updated} updated, ${results.failed} failed, ${results.skipped} skipped (blank quantity)`;
       await ActivityLogger.logInventoryActivity(
         currentUser.id,
         currentUser.username,
@@ -1955,7 +1982,7 @@ async function registerRoutes(app2) {
 
 // server/vite.ts
 import express2 from "express";
-import fs5 from "fs";
+import fs6 from "fs";
 import path7 from "path";
 import { createServer as createViteServer, createLogger } from "vite";
 
@@ -2067,7 +2094,7 @@ async function setupVite(app2, server) {
         "client",
         "index.html"
       );
-      let template = await fs5.promises.readFile(clientTemplate, "utf-8");
+      let template = await fs6.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`
@@ -2082,7 +2109,7 @@ async function setupVite(app2, server) {
 }
 function serveStatic(app2) {
   const distPath = path7.resolve(import.meta.dirname, "public");
-  if (!fs5.existsSync(distPath)) {
+  if (!fs6.existsSync(distPath)) {
     throw new Error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`
     );
@@ -2094,12 +2121,12 @@ function serveStatic(app2) {
 }
 
 // server/init.ts
-import fs6 from "fs";
+import fs7 from "fs";
 import path8 from "path";
 async function initializeAppStorage() {
   const dataDir = path8.join(process.cwd(), "server", "data");
-  if (!fs6.existsSync(dataDir)) {
-    fs6.mkdirSync(dataDir, { recursive: true });
+  if (!fs7.existsSync(dataDir)) {
+    fs7.mkdirSync(dataDir, { recursive: true });
   }
   const requiredFiles = {
     "users.json": { users: [
@@ -2135,8 +2162,8 @@ async function initializeAppStorage() {
   };
   for (const [fileName, defaultContent] of Object.entries(requiredFiles)) {
     const filePath = path8.join(dataDir, fileName);
-    if (!fs6.existsSync(filePath)) {
-      fs6.writeFileSync(filePath, JSON.stringify(defaultContent, null, 2));
+    if (!fs7.existsSync(filePath)) {
+      fs7.writeFileSync(filePath, JSON.stringify(defaultContent, null, 2));
     }
   }
   return dataDir;

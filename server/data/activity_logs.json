@@ -620,6 +620,42 @@
       "category": "sales",
       "details": "Refunded transaction: ID TRX-20250718-1, Total: $4.49, Items returned to inventory",
       "timestamp": "2025-07-18T15:24:44.050Z"
+    },
+    {
+      "id": 70,
+      "userId": 1,
+      "username": "admin",
+      "action": "User Login",
+      "category": "authentication",
+      "details": "User logged in successfully",
+      "timestamp": "2025-07-19T08:27:04.861Z"
+    },
+    {
+      "id": 71,
+      "userId": 0,
+      "username": "system",
+      "action": "Bulk Inventory Import",
+      "category": "inventory",
+      "details": "Bulk import: 2 created, 0 updated, 0 failed, 0 skipped (blank quantity)",
+      "timestamp": "2025-07-19T08:33:07.259Z"
+    },
+    {
+      "id": 72,
+      "userId": 1,
+      "username": "admin",
+      "action": "Inventory Item Created",
+      "category": "inventory",
+      "details": "Added item: Test New Item (SKU: NEW-001), Quantity: 15 each",
+      "timestamp": "2025-07-19T08:34:30.695Z"
+    },
+    {
+      "id": 73,
+      "userId": 0,
+      "username": "system",
+      "action": "Bulk Inventory Import",
+      "category": "inventory",
+      "details": "Bulk import: 2 created, 0 updated, 0 failed, 0 skipped (blank quantity)",
+      "timestamp": "2025-07-19T08:36:28.936Z"
     }
   ]
 }

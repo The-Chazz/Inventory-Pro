@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
+import fs from "fs/promises";
 import { fileStorage } from "./fileStorage";
 import { logStorage } from "./logStorage";
 import { ActivityLogger, LOG_ACTIONS, LOG_CATEGORIES } from "./logger";
@@ -22,6 +23,35 @@ import {
 // Get the directory name properly in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+/**
+ * Updates the CSV template file with a new inventory item (with blank stock)
+ * @param item - The inventory item to add to the template
+ */
+const updateCsvTemplate = async (item: any) => {
+  try {
+    const csvTemplatePaths = [
+      path.join(__dirname, '../client/public/sample-inventory-import.csv'),
+      path.join(__dirname, '../dist/public/sample-inventory-import.csv')
+    ];
+    
+    // Create a CSV row for the new item with blank stock
+    const csvRow = `${item.sku},${item.name},${item.category},,${item.unit},${item.price},${item.priceUnit},${item.threshold},${item.barcode || ''}`;
+    
+    // Update both template locations
+    for (const csvPath of csvTemplatePaths) {
+      try {
+        await fs.appendFile(csvPath, '\n' + csvRow);
+        console.log(`Added item ${item.sku} to CSV template at ${csvPath}`);
+      } catch (error) {
+        console.warn(`Could not update CSV template at ${csvPath}:`, error);
+      }
+    }
+  } catch (error) {
+    console.error('Error updating CSV template:', error);
+    // Don't fail the main operation if CSV update fails
+  }
+};
 
 /**
  * Helper function to get current user information from request
@@ -227,6 +257,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const newItem = await fileStorage.addInventoryItem(req.body);
+      
+      // Update CSV template with the new item (with blank stock)
+      await updateCsvTemplate(newItem);
       
       // Log inventory creation
       const currentUser = getCurrentUser(req);
@@ -503,11 +536,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updated: number;
         created: number;
         failed: number;
+        skipped: number;
         errors: string[];
       } = {
         updated: 0,
         created: 0,
         failed: 0,
+        skipped: 0,
         errors: []
       };
       
@@ -525,8 +560,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               normalizedItem[key.toLowerCase()] = item[key];
             }
           });
-          // Check if required fields are present
-          const requiredFields = ['sku', 'name', 'category', 'stock', 'unit', 'price', 'priceunit', 'threshold'];
+          // Check if required fields are present (excluding stock which can be blank)
+          const requiredFields = ['sku', 'name', 'category', 'unit', 'price', 'priceunit', 'threshold'];
           const missingFields = requiredFields.filter(field => 
             normalizedItem[field] === undefined || 
             normalizedItem[field] === null || 
@@ -536,6 +571,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (missingFields.length > 0) {
             results.failed++;
             results.errors.push(`Item with SKU ${normalizedItem.sku || 'unknown'}: Missing required fields: ${missingFields.join(', ')}`);
+            continue;
+          }
+          
+          // Skip entries with blank stock quantity (don't count as failed)
+          if (normalizedItem.stock === undefined || 
+              normalizedItem.stock === null || 
+              normalizedItem.stock === '' ||
+              String(normalizedItem.stock).trim() === '') {
+            console.log(`Skipping item with SKU ${normalizedItem.sku}: blank stock quantity`);
+            results.skipped++;
             continue;
           }
           
@@ -593,7 +638,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentUser = getCurrentUser(req);
       
       // Log the bulk inventory import activity
-      const details = `Bulk import: ${results.created} created, ${results.updated} updated, ${results.failed} failed`;
+      const details = `Bulk import: ${results.created} created, ${results.updated} updated, ${results.failed} failed, ${results.skipped} skipped (blank quantity)`;
       
       await ActivityLogger.logInventoryActivity(
         currentUser.id,

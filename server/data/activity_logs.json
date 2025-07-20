@@ -701,6 +701,15 @@
       "category": "inventory",
       "details": "Added item: Regular Product (SKU: REG-001), Quantity: 50 each",
       "timestamp": "2025-07-19T09:50:07.492Z"
+    },
+    {
+      "id": 79,
+      "userId": 1,
+      "username": "admin",
+      "action": "User Login",
+      "category": "authentication",
+      "details": "User logged in successfully",
+      "timestamp": "2025-07-20T12:32:32.733Z"
     }
   ]
 }

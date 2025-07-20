@@ -1,20 +1,25 @@
 import React, { useState, useRef } from 'react';
+import { queryClient } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 
 interface ImageUploaderProps {
   onImageUploaded: (imageUrl: string) => void;
   currentImage?: string;
   className?: string;
+  autoRefresh?: boolean; // New prop to control automatic data refresh
 }
 
 const ImageUploader: React.FC<ImageUploaderProps> = ({ 
   onImageUploaded, 
   currentImage,
-  className = "" 
+  className = "",
+  autoRefresh = true 
 }) => {
   const [previewUrl, setPreviewUrl] = useState<string | undefined>(currentImage);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -63,6 +68,21 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
         
         // Pass the server URL to the parent component
         onImageUploaded(result.imageUrl);
+        
+        // Invalidate relevant queries to refresh data after upload
+        if (autoRefresh) {
+          queryClient.invalidateQueries({ queryKey: ['/api/inventory'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/inventory/popular'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/settings'] });
+        }
+        
+        // Show success toast
+        toast({
+          title: "Success",
+          description: "Image uploaded successfully",
+          duration: 2000,
+        });
+        
         setIsLoading(false);
       };
       
@@ -72,7 +92,16 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
     } catch (error: any) {
       console.error('Error uploading image:', error);
       setError(error.message || 'Failed to upload image');
+      setPreviewUrl(undefined); // Reset preview on error
       setIsLoading(false);
+      
+      // Show error toast
+      toast({
+        title: "Upload Failed",
+        description: error.message || 'Failed to upload image',
+        variant: "destructive",
+        duration: 3000,
+      });
     }
   };
 
@@ -82,10 +111,17 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
 
   const handleRemoveImage = () => {
     setPreviewUrl(undefined);
+    setError(null); // Clear any existing errors
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
     onImageUploaded('');
+    
+    // Show confirmation toast
+    toast({
+      description: "Image removed",
+      duration: 2000,
+    });
   };
 
   return (

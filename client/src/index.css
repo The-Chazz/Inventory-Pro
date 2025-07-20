@@ -52,12 +52,10 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-
   body {
-    @apply font-sans antialiased bg-background text-foreground;
+    @apply font-sans antialiased;
+    background-color: white;
+    color: rgb(15 23 42);
   }
 }
 

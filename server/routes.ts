@@ -13,6 +13,7 @@ import { dirname } from 'path';
 import { 
   inventoryImageUpload, 
   logoImageUpload, 
+  receiptUpload,
   csvUpload, 
   processCsvFile, 
   saveBase64Image, 
@@ -563,6 +564,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error uploading inventory image:", error);
       res.status(500).json({ 
         error: "Failed to upload image", 
+        message: error.message 
+      });
+    }
+  });
+  
+  // Receipt upload endpoint
+  app.post("/api/receipts/upload", receiptUpload.single('receipt'), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No receipt uploaded" });
+      }
+      
+      // Generate URL for the uploaded receipt
+      const receiptUrl = `/uploads/receipts/${req.file.filename}`;
+      
+      // Get current user for logging
+      const currentUser = getCurrentUser(req);
+      
+      // Log the receipt upload activity
+      await ActivityLogger.logInventoryActivity(
+        currentUser.id,
+        currentUser.username,
+        LOG_ACTIONS.INVENTORY.CREATE, // Using CREATE action for receipt uploads
+        `Uploaded receipt: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)`
+      );
+      
+      res.json({
+        success: true,
+        receiptUrl,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        message: "Receipt uploaded successfully"
+      });
+    } catch (error: any) {
+      console.error("Error uploading receipt:", error);
+      res.status(500).json({ 
+        error: "Failed to upload receipt", 
         message: error.message 
       });
     }

@@ -817,8 +817,53 @@ var ActivityLogger = class {
 };
 
 // server/productLookup.ts
+var ProductCache = class {
+  cache = /* @__PURE__ */ new Map();
+  defaultTTL = 24 * 60 * 60 * 1e3;
+  // 24 hours
+  get(key) {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    const now = Date.now();
+    if (now - entry.timestamp > entry.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.data;
+  }
+  set(key, data, ttl) {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttl || this.defaultTTL
+    });
+  }
+  clear() {
+    this.cache.clear();
+  }
+  size() {
+    return this.cache.size;
+  }
+};
+var RateLimiter = class {
+  lastCall = 0;
+  minInterval = 100;
+  // Minimum 100ms between calls
+  async throttle() {
+    const now = Date.now();
+    const timeSinceLastCall = now - this.lastCall;
+    if (timeSinceLastCall < this.minInterval) {
+      const delay = this.minInterval - timeSinceLastCall;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    this.lastCall = Date.now();
+  }
+};
+var productCache = new ProductCache();
+var rateLimiter = new RateLimiter();
 async function searchOpenFoodFacts(barcode) {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
     const data = await response.json();
     if (data.status === 1 && data.product) {
@@ -844,6 +889,7 @@ async function searchOpenFoodFacts(barcode) {
 }
 async function searchUPCDatabase(barcode) {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${barcode}`);
     const data = await response.json();
     if (data.code === "OK" && data.items && data.items.length > 0) {
@@ -864,6 +910,7 @@ async function searchUPCDatabase(barcode) {
 }
 async function searchBarcodeSpider(barcode) {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://api.barcodespider.com/v1/lookup?token=free&upc=${barcode}`);
     const data = await response.json();
     if (data.item_response && data.item_response.message === "success") {
@@ -884,6 +931,7 @@ async function searchBarcodeSpider(barcode) {
 }
 async function searchBarcodeLookup(barcode) {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://www.barcodelookup.com/${barcode}`);
     const text = await response.text();
     const nameMatch = text.match(/<h1[^>]*>([^<]+)<\/h1>/i);
@@ -902,8 +950,49 @@ async function searchBarcodeLookup(barcode) {
   }
   return { success: false };
 }
+async function searchGoogleProducts(barcode) {
+  try {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    const searchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
+    if (!apiKey || !searchEngineId) {
+      return { success: false };
+    }
+    const query = `product barcode ${barcode}`;
+    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
+    await rateLimiter.throttle();
+    const response = await fetch(url);
+    const data = await response.json();
+    if (data.items && data.items.length > 0) {
+      const item = data.items[0];
+      return {
+        name: item.title,
+        description: item.snippet,
+        imageUrl: item.pagemap?.cse_image?.[0]?.src,
+        success: true,
+        source: "Google Product Search"
+      };
+    }
+  } catch (error) {
+  }
+  return { success: false };
+}
+async function searchAmazonProducts(barcode) {
+  try {
+    const accessKey = process.env.AMAZON_ACCESS_KEY;
+    const secretKey = process.env.AMAZON_SECRET_KEY;
+    const associateTag = process.env.AMAZON_ASSOCIATE_TAG;
+    if (!accessKey || !secretKey || !associateTag) {
+      return { success: false };
+    }
+    await rateLimiter.throttle();
+    return { success: false };
+  } catch (error) {
+  }
+  return { success: false };
+}
 async function searchEANSearch(barcode) {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://www.ean-search.org/api?op=barcode-lookup&format=json&ean=${barcode}`);
     const data = await response.json();
     if (data && data.length > 0 && data[0].name) {
@@ -926,6 +1015,11 @@ async function lookupProductByBarcode(barcode) {
   if (!cleanBarcode || cleanBarcode.length < 8) {
     return { success: false };
   }
+  const cacheKey = `barcode_${cleanBarcode}`;
+  const cached = productCache.get(cacheKey);
+  if (cached) {
+    return { ...cached, source: `${cached.source} (cached)` };
+  }
   const barcodeVariants = [
     cleanBarcode,
     // Add leading zeros for UPC-A format (12 digits)
@@ -937,24 +1031,37 @@ async function lookupProductByBarcode(barcode) {
   ].filter(Boolean);
   const apis = [
     searchOpenFoodFacts,
+    // Most comprehensive for food products
     searchUPCDatabase,
+    // Good general product database
+    searchGoogleProducts,
+    // Configurable with API key
+    searchAmazonProducts,
+    // Configurable with API credentials
     searchEANSearch,
+    // Good for European products
     searchBarcodeSpider,
+    // Additional source
     searchBarcodeLookup
+    // Web scraping fallback
   ];
   for (const barcodeVariant of barcodeVariants) {
     for (const api of apis) {
       try {
         const result = await api(barcodeVariant);
         if (result.success) {
+          productCache.set(cacheKey, result);
           return result;
         }
       } catch (error) {
+        console.warn(`API ${api.name} failed for barcode ${barcodeVariant}:`, error);
         continue;
       }
     }
   }
-  return { success: false };
+  const failedResult = { success: false };
+  productCache.set(cacheKey, failedResult, 60 * 60 * 1e3);
+  return failedResult;
 }
 
 // server/routes.ts

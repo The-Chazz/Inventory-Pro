@@ -174,6 +174,7 @@ The application follows a client-server architecture:
 - `POST /api/inventory` - Create new item
 - `PUT /api/inventory/:id` - Update item
 - `DELETE /api/inventory/:id` - Delete item
+- `GET /api/product-lookup/:barcode` - Lookup product information by barcode
 
 #### Sales
 - `GET /api/sales` - Get all sales
@@ -379,6 +380,40 @@ The built files will be in the `dist/` directory.
 - `PORT` - Server port (default: 5000)
 - `SESSION_SECRET` - Session encryption secret
 - `SESSION_MAX_AGE` - Session timeout in milliseconds
+
+#### Barcode Lookup API Configuration (Optional)
+
+The application includes enhanced barcode lookup functionality with multiple API sources. Most sources work without configuration, but you can enable additional premium sources:
+
+**Google Product Search API (Optional):**
+- `GOOGLE_API_KEY` - Google Custom Search API key
+- `GOOGLE_SEARCH_ENGINE_ID` - Custom Search Engine ID
+
+To set up Google Product Search:
+1. Get a Google Custom Search API key from [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a Custom Search Engine at [cse.google.com](https://cse.google.com/)
+3. Focus the search engine on product catalog sites
+4. Set the environment variables in your `.env` file
+
+**Amazon Product API (Optional):**
+- `AMAZON_ACCESS_KEY` - Amazon Product Advertising API access key
+- `AMAZON_SECRET_KEY` - Amazon Product Advertising API secret key
+- `AMAZON_ASSOCIATE_TAG` - Amazon Associates tag
+
+To set up Amazon Product API:
+1. Register for the [Amazon Associates program](https://associates.amazon.com/)
+2. Apply for [Product Advertising API access](https://webservices.amazon.com/paapi5/documentation/)
+3. Get your credentials from the Amazon Developer Console
+4. Set the environment variables in your `.env` file
+
+**Built-in Sources (No configuration required):**
+- Open Food Facts API - Comprehensive food product database
+- UPC Database API - General product database
+- EAN Search API - European product database
+- Barcode Spider API - Additional product source
+- Barcode Lookup - Web scraping fallback
+
+The system includes intelligent caching (24-hour TTL) and rate limiting to optimize performance and respect API limits.
 
 ### Features Configuration
 

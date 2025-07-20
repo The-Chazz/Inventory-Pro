@@ -1,7 +1,8 @@
 /**
  * Product Lookup Service
  * 
- * Uses free APIs to search for product information by barcode
+ * Uses multiple APIs to search for product information by barcode
+ * Includes caching and rate limiting for optimal performance
  */
 
 interface ProductInfo {
@@ -14,12 +15,76 @@ interface ProductInfo {
   source?: string;
 }
 
+// Simple in-memory cache with TTL
+interface CacheEntry {
+  data: ProductInfo;
+  timestamp: number;
+  ttl: number;
+}
+
+class ProductCache {
+  private cache = new Map<string, CacheEntry>();
+  private readonly defaultTTL = 24 * 60 * 60 * 1000; // 24 hours
+
+  get(key: string): ProductInfo | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    
+    const now = Date.now();
+    if (now - entry.timestamp > entry.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return entry.data;
+  }
+
+  set(key: string, data: ProductInfo, ttl?: number): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttl || this.defaultTTL
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  size(): number {
+    return this.cache.size;
+  }
+}
+
+// Rate limiter to avoid overwhelming APIs
+class RateLimiter {
+  private lastCall = 0;
+  private readonly minInterval = 100; // Minimum 100ms between calls
+
+  async throttle(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastCall = now - this.lastCall;
+    
+    if (timeSinceLastCall < this.minInterval) {
+      const delay = this.minInterval - timeSinceLastCall;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    
+    this.lastCall = Date.now();
+  }
+}
+
+// Global instances
+const productCache = new ProductCache();
+const rateLimiter = new RateLimiter();
+
 /**
  * Search for product information using Open Food Facts API (free)
  * Enhanced to search multiple name fields and better image selection
  */
 async function searchOpenFoodFacts(barcode: string): Promise<ProductInfo> {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
     const data = await response.json();
     
@@ -71,6 +136,7 @@ async function searchOpenFoodFacts(barcode: string): Promise<ProductInfo> {
  */
 async function searchUPCDatabase(barcode: string): Promise<ProductInfo> {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${barcode}`);
     const data = await response.json();
     
@@ -98,6 +164,7 @@ async function searchUPCDatabase(barcode: string): Promise<ProductInfo> {
  */
 async function searchBarcodeSpider(barcode: string): Promise<ProductInfo> {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://api.barcodespider.com/v1/lookup?token=free&upc=${barcode}`);
     const data = await response.json();
     
@@ -125,6 +192,7 @@ async function searchBarcodeSpider(barcode: string): Promise<ProductInfo> {
  */
 async function searchBarcodeLookup(barcode: string): Promise<ProductInfo> {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://www.barcodelookup.com/${barcode}`);
     const text = await response.text();
     
@@ -150,10 +218,90 @@ async function searchBarcodeLookup(barcode: string): Promise<ProductInfo> {
 }
 
 /**
+ * Search for product information using Google Product Search API
+ * Note: Requires Google Custom Search API key and Search Engine ID
+ */
+async function searchGoogleProducts(barcode: string): Promise<ProductInfo> {
+  try {
+    // For now, this is a placeholder implementation
+    // To use this, you would need to:
+    // 1. Get a Google Custom Search API key from Google Cloud Console
+    // 2. Create a Custom Search Engine focused on product catalogs
+    // 3. Set environment variables: GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID
+    
+    const apiKey = process.env.GOOGLE_API_KEY;
+    const searchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
+    
+    if (!apiKey || !searchEngineId) {
+      // Return unsuccessful if not configured
+      return { success: false };
+    }
+    
+    const query = `product barcode ${barcode}`;
+    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
+    
+    await rateLimiter.throttle();
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.items && data.items.length > 0) {
+      const item = data.items[0];
+      return {
+        name: item.title,
+        description: item.snippet,
+        imageUrl: item.pagemap?.cse_image?.[0]?.src,
+        success: true,
+        source: 'Google Product Search'
+      };
+    }
+  } catch (error) {
+    // Continue to next API
+  }
+  
+  return { success: false };
+}
+
+/**
+ * Search for product information using Amazon Product API
+ * Note: Requires Amazon Product Advertising API credentials
+ */
+async function searchAmazonProducts(barcode: string): Promise<ProductInfo> {
+  try {
+    // For now, this is a placeholder implementation
+    // To use this, you would need to:
+    // 1. Register for Amazon Associates program
+    // 2. Get Product Advertising API credentials
+    // 3. Set environment variables: AMAZON_ACCESS_KEY, AMAZON_SECRET_KEY, AMAZON_ASSOCIATE_TAG
+    
+    const accessKey = process.env.AMAZON_ACCESS_KEY;
+    const secretKey = process.env.AMAZON_SECRET_KEY;
+    const associateTag = process.env.AMAZON_ASSOCIATE_TAG;
+    
+    if (!accessKey || !secretKey || !associateTag) {
+      // Return unsuccessful if not configured
+      return { success: false };
+    }
+    
+    // Amazon Product API requires complex signature authentication
+    // This would need a proper implementation with AWS signature v4
+    // For now, we'll try a simple search approach (which may not work without proper auth)
+    
+    await rateLimiter.throttle();
+    // This is a simplified placeholder - real implementation would require proper AWS signing
+    return { success: false };
+    
+  } catch (error) {
+    // Continue to next API
+  }
+  
+  return { success: false };
+}
+/**
  * Search for product information using EAN Search API (free)
  */
 async function searchEANSearch(barcode: string): Promise<ProductInfo> {
   try {
+    await rateLimiter.throttle();
     const response = await fetch(`https://www.ean-search.org/api?op=barcode-lookup&format=json&ean=${barcode}`);
     const data = await response.json();
     
@@ -177,7 +325,7 @@ async function searchEANSearch(barcode: string): Promise<ProductInfo> {
 
 /**
  * Main function to lookup product information by barcode
- * Tries multiple free APIs in sequence with expanded search range
+ * Includes caching, rate limiting, and expanded API sources
  */
 export async function lookupProductByBarcode(barcode: string): Promise<ProductInfo> {
   // Clean the barcode (remove any non-numeric characters)
@@ -185,6 +333,13 @@ export async function lookupProductByBarcode(barcode: string): Promise<ProductIn
   
   if (!cleanBarcode || cleanBarcode.length < 8) {
     return { success: false };
+  }
+  
+  // Check cache first
+  const cacheKey = `barcode_${cleanBarcode}`;
+  const cached = productCache.get(cacheKey);
+  if (cached) {
+    return { ...cached, source: `${cached.source} (cached)` };
   }
   
   // Try different barcode formats if original doesn't work
@@ -198,13 +353,15 @@ export async function lookupProductByBarcode(barcode: string): Promise<ProductIn
     cleanBarcode.length > 8 ? cleanBarcode.substring(0, cleanBarcode.length - 1) : null
   ].filter(Boolean) as string[];
   
-  // Try each API in order - expanded range of sources
+  // Try each API in priority order (most reliable first)
   const apis = [
-    searchOpenFoodFacts,
-    searchUPCDatabase,
-    searchEANSearch,
-    searchBarcodeSpider,
-    searchBarcodeLookup
+    searchOpenFoodFacts,      // Most comprehensive for food products
+    searchUPCDatabase,        // Good general product database
+    searchGoogleProducts,     // Configurable with API key
+    searchAmazonProducts,     // Configurable with API credentials
+    searchEANSearch,          // Good for European products
+    searchBarcodeSpider,      // Additional source
+    searchBarcodeLookup       // Web scraping fallback
   ];
   
   // Try each barcode variant with each API for maximum coverage
@@ -213,14 +370,21 @@ export async function lookupProductByBarcode(barcode: string): Promise<ProductIn
       try {
         const result = await api(barcodeVariant);
         if (result.success) {
+          // Cache successful results
+          productCache.set(cacheKey, result);
           return result;
         }
       } catch (error) {
         // Continue to next API/variant combination
+        console.warn(`API ${api.name} failed for barcode ${barcodeVariant}:`, error);
         continue;
       }
     }
   }
   
-  return { success: false };
+  // Cache unsuccessful results for a shorter time to avoid repeated failed lookups
+  const failedResult = { success: false };
+  productCache.set(cacheKey, failedResult, 60 * 60 * 1000); // 1 hour TTL for failures
+  
+  return failedResult;
 }

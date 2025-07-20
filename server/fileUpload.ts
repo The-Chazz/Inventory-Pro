@@ -13,12 +13,14 @@ const __dirname = dirname(__filename);
 const uploadDir = path.join(__dirname, 'uploads');
 const inventoryImagesDir = path.join(uploadDir, 'inventory');
 const logoImagesDir = path.join(uploadDir, 'logos');
+const receiptImagesDir = path.join(uploadDir, 'receipts');
 const csvDir = path.join(uploadDir, 'csv');
 
 // Ensure upload directories exist
 fs.ensureDirSync(uploadDir);
 fs.ensureDirSync(inventoryImagesDir);
 fs.ensureDirSync(logoImagesDir);
+fs.ensureDirSync(receiptImagesDir);
 fs.ensureDirSync(csvDir);
 
 // Configure storage for inventory images
@@ -47,6 +49,19 @@ const logoStorage = multer.diskStorage({
   }
 });
 
+// Configure storage for receipt images and documents
+const receiptStorage = multer.diskStorage({
+  destination: function (req: Express.Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) {
+    cb(null, receiptImagesDir);
+  },
+  filename: function (req: Express.Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) {
+    // Create a unique filename with timestamp and original extension
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'receipt-' + uniqueSuffix + ext);
+  }
+});
+
 // Configure storage for CSV uploads
 const csvStorage = multer.diskStorage({
   destination: function (req: Express.Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) {
@@ -68,6 +83,19 @@ const imageFileFilter = (
     cb(null, true);
   } else {
     cb(new Error('Only image files are allowed'));
+  }
+};
+
+// File filter to accept receipt files (images and PDFs)
+const receiptFileFilter = (
+  req: Express.Request, 
+  file: Express.Multer.File, 
+  cb: multer.FileFilterCallback
+) => {
+  if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+    cb(null, true);
+  } else {
+    cb(new Error('Only image files and PDFs are allowed for receipts'));
   }
 };
 
@@ -101,6 +129,14 @@ export const logoImageUpload = multer({
   fileFilter: imageFileFilter
 });
 
+export const receiptUpload = multer({ 
+  storage: receiptStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB max file size for receipts
+  },
+  fileFilter: receiptFileFilter
+});
+
 export const csvUpload = multer({ 
   storage: csvStorage,
   limits: {
@@ -110,15 +146,17 @@ export const csvUpload = multer({
 });
 
 // Helper function to get the public URL for an image
-export function getImageUrl(filename: string, type: 'inventory' | 'logo'): string {
-  const baseDir = type === 'inventory' ? 'inventory' : 'logos';
+export function getImageUrl(filename: string, type: 'inventory' | 'logo' | 'receipt'): string {
+  const baseDir = type === 'inventory' ? 'inventory' : 
+                  type === 'receipt' ? 'receipts' : 'logos';
   return `/uploads/${baseDir}/${filename}`;
 }
 
 // Helper function to delete an image file
-export async function deleteImage(filename: string, type: 'inventory' | 'logo'): Promise<boolean> {
+export async function deleteImage(filename: string, type: 'inventory' | 'logo' | 'receipt'): Promise<boolean> {
   try {
-    const baseDir = type === 'inventory' ? inventoryImagesDir : logoImagesDir;
+    const baseDir = type === 'inventory' ? inventoryImagesDir : 
+                    type === 'receipt' ? receiptImagesDir : logoImagesDir;
     const filePath = path.join(baseDir, filename);
     
     // Check if file exists
@@ -153,10 +191,13 @@ export async function saveBase64Image(
     // Create a unique filename
     const filename = type === 'inventory' 
       ? `inventory-${itemId || Date.now()}-${Math.round(Math.random() * 1E9)}.${extension}`
+      : type === 'receipt'
+      ? `receipt-${itemId || Date.now()}-${Math.round(Math.random() * 1E9)}.${extension}`
       : `store-logo-${Date.now()}-${Math.round(Math.random() * 1E9)}.${extension}`;
     
     // Save to the appropriate directory
-    const baseDir = type === 'inventory' ? inventoryImagesDir : logoImagesDir;
+    const baseDir = type === 'inventory' ? inventoryImagesDir : 
+                    type === 'receipt' ? receiptImagesDir : logoImagesDir;
     const filePath = path.join(baseDir, filename);
     
     await fs.writeFile(filePath, imageData);

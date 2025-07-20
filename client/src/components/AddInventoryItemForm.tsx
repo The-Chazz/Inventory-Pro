@@ -48,6 +48,21 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
   const [uploadedImage, setUploadedImage] = useState<string>("");
   const [isLookingUp, setIsLookingUp] = useState(false);
   const { toast } = useToast();
+
+  // Auto-activate scanner when form opens
+  useEffect(() => {
+    setScannerActive(true);
+    toast({
+      title: "Scanner Auto-Activated",
+      description: "Barcode scanner ready for product lookup",
+      duration: 2000,
+    });
+
+    // Cleanup scanner on unmount
+    return () => {
+      setScannerActive(false);
+    };
+  }, []);
   
   // Initialize form
   const form = useForm<InventoryItemFormValues>({
@@ -222,12 +237,16 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
             <label className="block text-sm font-medium text-gray-700">
-              Scan Barcode
+              Scan Barcode {scannerActive && <span className="text-green-600 text-xs">(Active)</span>}
             </label>
             <button
               type="button"
               onClick={() => setScannerActive(!scannerActive)}
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className={`text-sm transition-colors ${
+                scannerActive 
+                  ? 'text-red-600 hover:text-red-800' 
+                  : 'text-blue-600 hover:text-blue-800'
+              }`}
             >
               {scannerActive ? 'Disable Scanner' : 'Enable Scanner'}
             </button>

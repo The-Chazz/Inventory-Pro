@@ -46,6 +46,27 @@ const PointOfSale: React.FC = () => {
   const [currentUser, setCurrentUser] = useState({ name: "Admin User", username: "admin" }); // Default to Admin User
 
   const { toast } = useToast();
+
+  // Auto-activate scanner on component mount
+  useEffect(() => {
+    // Auto-activate scanner when component mounts
+    setIsScanning(true);
+    toast({
+      title: "Scanner Auto-Activated",
+      description: "Barcode scanner activated automatically. Will stay active for 30 minutes.",
+      duration: 3000,
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (scannerTimeout) {
+        clearTimeout(scannerTimeout);
+      }
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+      }
+    };
+  }, []); // Run only on mount
   
   // Helper function to format time remaining
   const formatTimeRemaining = (seconds: number) => {
@@ -411,29 +432,38 @@ const PointOfSale: React.FC = () => {
                   </button>
                   <button 
                     onClick={() => {
-                      if (!isScanning) {
+                      if (isScanning) {
+                        // Manual deactivation
+                        setIsScanning(false);
+                        toast({
+                          title: "Scanner Deactivated",
+                          description: "Barcode scanner manually turned off",
+                          duration: 2000,
+                        });
+                      } else {
+                        // Manual reactivation
                         setIsScanning(true);
                         toast({
-                          title: "Scanner Activated",
-                          description: "Barcode scanner will stay active for 30 minutes",
+                          title: "Scanner Reactivated",
+                          description: "Barcode scanner turned back on for 30 minutes",
                           duration: 2000,
                         });
                       }
                     }} 
                     className={`px-4 py-2 rounded-md font-medium transition-colors ${
                       isScanning 
-                        ? 'bg-green-100 text-green-700 cursor-not-allowed' 
+                        ? 'bg-red-100 text-red-700 hover:bg-red-200 cursor-pointer' 
                         : 'bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer'
                     }`}
-                    disabled={isScanning}
                   >
                     {isScanning ? (
                       <div className="flex items-center space-x-2">
                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                         <span>Scanner Active ({formatTimeRemaining(timeRemaining)})</span>
+                        <span className="ml-2 text-xs">[Click to Stop]</span>
                       </div>
                     ) : (
-                      'Activate Scanner'
+                      'Reactivate Scanner'
                     )}
                   </button>
                 </div>

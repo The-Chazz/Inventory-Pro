@@ -1,22 +1,62 @@
 /**
  * Product Lookup Service
  * 
- * Uses multiple APIs to search for product information by barcode
- * Includes international databases, region detection, and multi-language support
- * Includes caching and rate limiting for optimal performance
+ * Uses free APIs to search for product information by barcode
+ * Focus on Open Food Facts (no key required) and UPC Database (free tier)
+ * Includes caching, rate limiting, error handling and logging
  */
 
-interface ProductInfo {
-  name?: string;
-  description?: string;
-  brand?: string;
-  category?: string;
-  imageUrl?: string;
-  success: boolean;
-  source?: string;
-  region?: string;
-  language?: string;
-}
+import { z } from "zod";
+
+// Zod schemas for API response validation
+export const ProductInfoSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().optional(),
+  brand: z.string().optional(),
+  category: z.string().optional(),
+  imageUrl: z.string().url().optional().or(z.literal("")),
+  success: z.boolean(),
+  source: z.string().optional(),
+  region: z.string().optional(),
+  language: z.string().optional(),
+  errorMessage: z.string().optional(),
+});
+
+export const OpenFoodFactsProductSchema = z.object({
+  status: z.number(),
+  product: z.object({
+    product_name: z.string().optional(),
+    product_name_en: z.string().optional(),
+    product_name_fr: z.string().optional(),
+    product_name_es: z.string().optional(),
+    abbreviated_product_name: z.string().optional(),
+    generic_name: z.string().optional(),
+    generic_name_en: z.string().optional(),
+    brands: z.string().optional(),
+    categories: z.string().optional(),
+    categories_tags: z.array(z.string()).optional(),
+    image_front_url: z.string().url().optional().or(z.literal("")),
+    image_url: z.string().url().optional().or(z.literal("")),
+    image_front_small_url: z.string().url().optional().or(z.literal("")),
+    ingredients_text: z.string().optional(),
+    ingredients_text_en: z.string().optional(),
+  }).partial().optional(),
+}).partial();
+
+export const UPCDatabaseResponseSchema = z.object({
+  code: z.string(),
+  items: z.array(z.object({
+    title: z.string().optional(),
+    description: z.string().optional(),
+    brand: z.string().optional(),
+    category: z.string().optional(),
+    images: z.array(z.string().url()).optional(),
+  }).partial()).optional(),
+}).partial();
+
+export type ProductInfo = z.infer<typeof ProductInfoSchema>;
+export type OpenFoodFactsProduct = z.infer<typeof OpenFoodFactsProductSchema>;
+export type UPCDatabaseResponse = z.infer<typeof UPCDatabaseResponseSchema>;
 
 // Simple in-memory cache with TTL
 interface CacheEntry {
@@ -59,27 +99,76 @@ class ProductCache {
   }
 }
 
-// Rate limiter to avoid overwhelming APIs
+// Enhanced rate limiter with per-API limits
 class RateLimiter {
-  private lastCall = 0;
-  private readonly minInterval = 100; // Minimum 100ms between calls
+  private lastCalls = new Map<string, number>();
+  private readonly defaultMinInterval = 100; // 100ms general rate limit
+  private readonly upcDatabaseInterval = 1000; // 1 second for UPC Database free tier
+  private readonly openFoodFactsInterval = 200; // 200ms for Open Food Facts to be respectful
 
-  async throttle(): Promise<void> {
+  async throttle(apiName: string = 'default'): Promise<void> {
     const now = Date.now();
-    const timeSinceLastCall = now - this.lastCall;
+    const lastCall = this.lastCalls.get(apiName) || 0;
     
-    if (timeSinceLastCall < this.minInterval) {
-      const delay = this.minInterval - timeSinceLastCall;
+    const minInterval = this.getMinInterval(apiName);
+    const timeSinceLastCall = now - lastCall;
+    
+    if (timeSinceLastCall < minInterval) {
+      const delay = minInterval - timeSinceLastCall;
       await new Promise(resolve => setTimeout(resolve, delay));
     }
     
-    this.lastCall = Date.now();
+    this.lastCalls.set(apiName, Date.now());
+  }
+  
+  private getMinInterval(apiName: string): number {
+    switch (apiName) {
+      case 'upcDatabase':
+        return this.upcDatabaseInterval;
+      case 'openFoodFacts':
+        return this.openFoodFactsInterval;
+      default:
+        return this.defaultMinInterval;
+    }
+  }
+}
+
+// Enhanced logging for barcode lookup operations
+class BarcodeLogger {
+  private static instance: BarcodeLogger;
+  
+  static getInstance(): BarcodeLogger {
+    if (!BarcodeLogger.instance) {
+      BarcodeLogger.instance = new BarcodeLogger();
+    }
+    return BarcodeLogger.instance;
+  }
+  
+  logAttempt(barcode: string, apiName: string): void {
+    console.log(`[ProductLookup] Attempting ${apiName} for barcode: ${barcode}`);
+  }
+  
+  logSuccess(barcode: string, apiName: string, productName?: string): void {
+    console.log(`[ProductLookup] SUCCESS ${apiName} for barcode ${barcode}: ${productName || 'Found product'}`);
+  }
+  
+  logError(barcode: string, apiName: string, error: any): void {
+    console.warn(`[ProductLookup] ERROR ${apiName} for barcode ${barcode}:`, error.message || error);
+  }
+  
+  logCacheHit(barcode: string): void {
+    console.log(`[ProductLookup] Cache HIT for barcode: ${barcode}`);
+  }
+  
+  logCacheMiss(barcode: string): void {
+    console.log(`[ProductLookup] Cache MISS for barcode: ${barcode}`);
   }
 }
 
 // Global instances
 const productCache = new ProductCache();
 const rateLimiter = new RateLimiter();
+const logger = BarcodeLogger.getInstance();
 
 /**
  * Detect region based on barcode prefix
@@ -412,17 +501,39 @@ async function searchCARICOMRegional(barcode: string): Promise<ProductInfo> {
 
 /**
  * Search for product information using Open Food Facts API (free)
- * Enhanced to search multiple name fields and better image selection
- * Now includes multi-language support
+ * Enhanced with better error handling, logging, and response validation
+ * Supports multi-language search based on barcode region
  */
 async function searchOpenFoodFacts(barcode: string): Promise<ProductInfo> {
+  const apiName = 'openFoodFacts';
+  
   try {
-    await rateLimiter.throttle();
+    logger.logAttempt(barcode, 'Open Food Facts');
+    await rateLimiter.throttle(apiName);
+    
     const region = detectRegion(barcode);
     const languages = getRegionLanguages(region);
     
-    const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
-    const data = await response.json();
+    const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`, {
+      timeout: 10000, // 10 second timeout
+      headers: {
+        'User-Agent': 'Inventory-Pro/1.0.0 (Product Lookup Service)'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const rawData = await response.json();
+    
+    // Validate response structure
+    const validationResult = OpenFoodFactsProductSchema.safeParse(rawData);
+    if (!validationResult.success) {
+      throw new Error(`Invalid API response structure: ${validationResult.error.message}`);
+    }
+    
+    const data = validationResult.data;
     
     if (data.status === 1 && data.product) {
       const product = data.product;
@@ -433,8 +544,9 @@ async function searchOpenFoodFacts(barcode: string): Promise<ProductInfo> {
       
       // Try language-specific names first
       for (const lang of languages) {
-        if (!name && product[`product_name_${lang}`]) {
-          name = product[`product_name_${lang}`];
+        const langField = `product_name_${lang}` as keyof typeof product;
+        if (!name && product[langField]) {
+          name = product[langField] as string;
           break;
         }
       }
@@ -447,13 +559,14 @@ async function searchOpenFoodFacts(barcode: string): Promise<ProductInfo> {
                product.product_name_es || 
                product.abbreviated_product_name ||
                product.generic_name || 
-               product.generic_name_en;
+               product.generic_name_en || '';
       }
       
       // Try language-specific descriptions
       for (const lang of languages) {
-        if (!description && product[`generic_name_${lang}`]) {
-          description = product[`generic_name_${lang}`];
+        const langField = `generic_name_${lang}` as keyof typeof product;
+        if (!description && product[langField]) {
+          description = product[langField] as string;
           break;
         }
       }
@@ -463,246 +576,162 @@ async function searchOpenFoodFacts(barcode: string): Promise<ProductInfo> {
         description = product.generic_name || 
                      product.generic_name_en || 
                      product.ingredients_text_en || 
-                     product.ingredients_text;
+                     product.ingredients_text || '';
       }
       
-      // Better image selection
-      const imageUrl = product.image_front_url || 
-                      product.image_url || 
-                      product.image_front_small_url ||
-                      (product.selected_images && product.selected_images.front && product.selected_images.front.display && product.selected_images.front.display.en);
+      // Better image selection with URL validation
+      let imageUrl = product.image_front_url || 
+                    product.image_url || 
+                    product.image_front_small_url || '';
       
-      if (name) {
-        return {
+      // Validate image URL
+      if (imageUrl && !imageUrl.startsWith('http')) {
+        imageUrl = '';
+      }
+      
+      if (name.trim()) {
+        const result: ProductInfo = {
           name: name.trim(),
           description: description ? description.trim() : undefined,
-          brand: product.brands,
-          category: product.categories || product.categories_tags?.[0],
-          imageUrl: imageUrl,
+          brand: product.brands || undefined,
+          category: product.categories || product.categories_tags?.[0] || undefined,
+          imageUrl: imageUrl || undefined,
           success: true,
           source: 'Open Food Facts',
           region: region,
           language: languages[0]
         };
+        
+        logger.logSuccess(barcode, 'Open Food Facts', result.name);
+        return result;
       }
     }
-  } catch (error) {
-    // Continue to next API
+    
+    // Product not found in Open Food Facts
+    return { 
+      success: false, 
+      errorMessage: 'Product not found in Open Food Facts database' 
+    };
+    
+  } catch (error: any) {
+    logger.logError(barcode, 'Open Food Facts', error);
+    return { 
+      success: false, 
+      errorMessage: `Open Food Facts API error: ${error.message}` 
+    };
   }
-  
-  return { success: false };
 }
 
 /**
- * Search for product information using UPC Database API (free)
+ * Search for product information using UPC Database API (free tier)
+ * Enhanced with proper rate limiting for free tier and error handling
+ * Free tier allows 100 requests per day, 1 request per second
+ * Optional: Set UPC_DATABASE_API_KEY environment variable for paid tier
  */
 async function searchUPCDatabase(barcode: string): Promise<ProductInfo> {
+  const apiName = 'upcDatabase';
+  
   try {
-    await rateLimiter.throttle();
-    const response = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${barcode}`);
-    const data = await response.json();
+    logger.logAttempt(barcode, 'UPC Database');
+    await rateLimiter.throttle(apiName); // Enforces 1 second delay for free tier
+    
+    // Use API key if available, otherwise use free trial endpoint
+    const apiKey = process.env.UPC_DATABASE_API_KEY;
+    const baseUrl = apiKey 
+      ? 'https://api.upcitemdb.com/prod/trial/lookup' 
+      : 'https://api.upcitemdb.com/prod/trial/lookup';
+    
+    const url = `${baseUrl}?upc=${barcode}`;
+    
+    const response = await fetch(url, {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Inventory-Pro/1.0.0 (Product Lookup Service)',
+        ...(apiKey && { 'user_key': apiKey })
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const rawData = await response.json();
+    
+    // Validate response structure
+    const validationResult = UPCDatabaseResponseSchema.safeParse(rawData);
+    if (!validationResult.success) {
+      throw new Error(`Invalid API response structure: ${validationResult.error.message}`);
+    }
+    
+    const data = validationResult.data;
     
     if (data.code === 'OK' && data.items && data.items.length > 0) {
       const item = data.items[0];
-      return {
-        name: item.title,
-        description: item.description,
-        brand: item.brand,
-        category: item.category,
-        imageUrl: item.images && item.images.length > 0 ? item.images[0] : undefined,
+      
+      const result: ProductInfo = {
+        name: item.title || undefined,
+        description: item.description || undefined,
+        brand: item.brand || undefined,
+        category: item.category || undefined,
+        imageUrl: (item.images && item.images.length > 0) ? item.images[0] : undefined,
         success: true,
-        source: 'UPC Database'
+        source: apiKey ? 'UPC Database (API Key)' : 'UPC Database (Free)'
       };
+      
+      logger.logSuccess(barcode, 'UPC Database', result.name);
+      return result;
+    } else if (data.code === 'RATE_LIMIT_EXCEEDED') {
+      throw new Error('Rate limit exceeded for UPC Database free tier');
     }
-  } catch (error) {
-    // Continue to next API
+    
+    return { 
+      success: false, 
+      errorMessage: 'Product not found in UPC Database' 
+    };
+    
+  } catch (error: any) {
+    logger.logError(barcode, 'UPC Database', error);
+    return { 
+      success: false, 
+      errorMessage: `UPC Database API error: ${error.message}` 
+    };
   }
-  
-  return { success: false };
 }
 
-/**
- * Search for product information using Barcode Spider API (free)
- */
-async function searchBarcodeSpider(barcode: string): Promise<ProductInfo> {
-  try {
-    await rateLimiter.throttle();
-    const response = await fetch(`https://api.barcodespider.com/v1/lookup?token=free&upc=${barcode}`);
-    const data = await response.json();
-    
-    if (data.item_response && data.item_response.message === 'success') {
-      const item = data.item_response.item_attributes;
-      return {
-        name: item.title,
-        description: item.description,
-        brand: item.brand,
-        category: item.category,
-        imageUrl: item.image,
-        success: true,
-        source: 'Barcode Spider'
-      };
-    }
-  } catch (error) {
-    // Continue to next method
-  }
-  
-  return { success: false };
-}
 
-/**
- * Search for product information using Barcode Lookup API (free)
- */
-async function searchBarcodeLookup(barcode: string): Promise<ProductInfo> {
-  try {
-    await rateLimiter.throttle();
-    const response = await fetch(`https://www.barcodelookup.com/${barcode}`);
-    const text = await response.text();
-    
-    // Parse HTML to extract product information
-    const nameMatch = text.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-    const imageMatch = text.match(/<meta property="og:image" content="([^"]+)"/i);
-    const descMatch = text.match(/<meta property="og:description" content="([^"]+)"/i);
-    
-    if (nameMatch && nameMatch[1]) {
-      return {
-        name: nameMatch[1].trim(),
-        description: descMatch ? descMatch[1].trim() : undefined,
-        imageUrl: imageMatch ? imageMatch[1].trim() : undefined,
-        success: true,
-        source: 'Barcode Lookup'
-      };
-    }
-  } catch (error) {
-    // Continue to next method
-  }
-  
-  return { success: false };
-}
 
-/**
- * Search for product information using Google Product Search API
- * Note: Requires Google Custom Search API key and Search Engine ID
- */
-async function searchGoogleProducts(barcode: string): Promise<ProductInfo> {
-  try {
-    // For now, this is a placeholder implementation
-    // To use this, you would need to:
-    // 1. Get a Google Custom Search API key from Google Cloud Console
-    // 2. Create a Custom Search Engine focused on product catalogs
-    // 3. Set environment variables: GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID
-    
-    const apiKey = process.env.GOOGLE_API_KEY;
-    const searchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
-    
-    if (!apiKey || !searchEngineId) {
-      // Return unsuccessful if not configured
-      return { success: false };
-    }
-    
-    const query = `product barcode ${barcode}`;
-    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
-    
-    await rateLimiter.throttle();
-    const response = await fetch(url);
-    const data = await response.json();
-    
-    if (data.items && data.items.length > 0) {
-      const item = data.items[0];
-      return {
-        name: item.title,
-        description: item.snippet,
-        imageUrl: item.pagemap?.cse_image?.[0]?.src,
-        success: true,
-        source: 'Google Product Search'
-      };
-    }
-  } catch (error) {
-    // Continue to next API
-  }
-  
-  return { success: false };
-}
 
-/**
- * Search for product information using Amazon Product API
- * Note: Requires Amazon Product Advertising API credentials
- */
-async function searchAmazonProducts(barcode: string): Promise<ProductInfo> {
-  try {
-    // For now, this is a placeholder implementation
-    // To use this, you would need to:
-    // 1. Register for Amazon Associates program
-    // 2. Get Product Advertising API credentials
-    // 3. Set environment variables: AMAZON_ACCESS_KEY, AMAZON_SECRET_KEY, AMAZON_ASSOCIATE_TAG
-    
-    const accessKey = process.env.AMAZON_ACCESS_KEY;
-    const secretKey = process.env.AMAZON_SECRET_KEY;
-    const associateTag = process.env.AMAZON_ASSOCIATE_TAG;
-    
-    if (!accessKey || !secretKey || !associateTag) {
-      // Return unsuccessful if not configured
-      return { success: false };
-    }
-    
-    // Amazon Product API requires complex signature authentication
-    // This would need a proper implementation with AWS signature v4
-    // For now, we'll try a simple search approach (which may not work without proper auth)
-    
-    await rateLimiter.throttle();
-    // This is a simplified placeholder - real implementation would require proper AWS signing
-    return { success: false };
-    
-  } catch (error) {
-    // Continue to next API
-  }
-  
-  return { success: false };
-}
-/**
- * Search for product information using EAN Search API (free)
- */
-async function searchEANSearch(barcode: string): Promise<ProductInfo> {
-  try {
-    await rateLimiter.throttle();
-    const response = await fetch(`https://www.ean-search.org/api?op=barcode-lookup&format=json&ean=${barcode}`);
-    const data = await response.json();
-    
-    if (data && data.length > 0 && data[0].name) {
-      const product = data[0];
-      return {
-        name: product.name,
-        description: product.description,
-        category: product.categoryText,
-        imageUrl: product.image,
-        success: true,
-        source: 'EAN Search'
-      };
-    }
-  } catch (error) {
-    // Continue to next method
-  }
-  
-  return { success: false };
-}
+
+
+
+
+
 
 /**
  * Main function to lookup product information by barcode
- * Includes caching, rate limiting, and expanded API sources
+ * Updated to focus on free APIs with proper error handling and logging
  */
 export async function lookupProductByBarcode(barcode: string): Promise<ProductInfo> {
   // Clean the barcode (remove any non-numeric characters)
   const cleanBarcode = barcode.replace(/\D/g, '');
   
   if (!cleanBarcode || cleanBarcode.length < 8) {
-    return { success: false };
+    logger.logError(cleanBarcode, 'Validation', new Error('Invalid barcode length'));
+    return { 
+      success: false, 
+      errorMessage: 'Invalid barcode: must be at least 8 digits' 
+    };
   }
   
   // Check cache first
   const cacheKey = `barcode_${cleanBarcode}`;
   const cached = productCache.get(cacheKey);
   if (cached) {
+    logger.logCacheHit(cleanBarcode);
     return { ...cached, source: `${cached.source} (cached)` };
   }
+  
+  logger.logCacheMiss(cleanBarcode);
   
   // Try different barcode formats if original doesn't work
   const barcodeVariants = [
@@ -715,27 +744,29 @@ export async function lookupProductByBarcode(barcode: string): Promise<ProductIn
     cleanBarcode.length > 8 ? cleanBarcode.substring(0, cleanBarcode.length - 1) : null
   ].filter(Boolean) as string[];
   
-  // Try each API in priority order (most reliable first, region-specific prioritization)
+  // Focus on free APIs only
   const region = detectRegion(cleanBarcode);
-  let apis = [
-    searchOpenFoodFacts,      // Most comprehensive for food products
-    searchUPCDatabase,        // Good general product database
-    searchGS1GEPIR,          // Global GS1 database
-    searchEANSearch,         // Good for European products
-    searchGoogleProducts,    // Configurable with API key
-    searchAmazonProducts,    // Configurable with API credentials
-    searchBarcodeSpider,     // Additional source
-    searchBarcodeLookup      // Web scraping fallback
+  const freeApis = [
+    searchOpenFoodFacts,    // Comprehensive free food product database
+    searchUPCDatabase,      // General product database with free tier
   ];
   
-  // Prioritize region-specific APIs
+  // Add regional APIs if they might be accessible
+  let apis = [...freeApis];
+  
+  // Prioritize region-specific APIs if they exist and might work
   if (region === 'CHINA' || cleanBarcode.startsWith('69')) {
     apis = [searchChinaGBT, searchGS1GEPIR, ...apis];
   } else if (region === 'CARICOM' || ['740', '741', '742', '743', '744', '745', '746'].includes(cleanBarcode.substring(0, 3))) {
     apis = [searchGS1Caribbean, searchCARICOMRegional, searchGS1GEPIR, ...apis];
+  } else {
+    // Add GS1 GEPIR as it might work for some regions
+    apis = [searchGS1GEPIR, ...apis];
   }
   
-  // Try each barcode variant with each API for maximum coverage
+  const errors: string[] = [];
+  
+  // Try each barcode variant with each API
   for (const barcodeVariant of barcodeVariants) {
     for (const api of apis) {
       try {
@@ -750,18 +781,74 @@ export async function lookupProductByBarcode(barcode: string): Promise<ProductIn
           }
           
           return result;
+        } else if (result.errorMessage) {
+          errors.push(result.errorMessage);
         }
-      } catch (error) {
-        // Continue to next API/variant combination
-        console.warn(`API ${api.name} failed for barcode ${barcodeVariant}:`, error);
+      } catch (error: any) {
+        // Log error and continue to next API/variant combination
+        logger.logError(barcodeVariant, api.name, error);
+        errors.push(`${api.name}: ${error.message}`);
         continue;
       }
     }
   }
   
   // Cache unsuccessful results for a shorter time to avoid repeated failed lookups
-  const failedResult = { success: false };
+  const failedResult: ProductInfo = { 
+    success: false,
+    errorMessage: `Product not found. Tried ${apis.length} APIs. Errors: ${errors.join('; ')}`
+  };
   productCache.set(cacheKey, failedResult, 60 * 60 * 1000); // 1 hour TTL for failures
   
   return failedResult;
+}
+
+/**
+ * Test API availability for debugging and monitoring
+ */
+export async function testAPIAvailability(): Promise<Record<string, boolean>> {
+  const testResults: Record<string, boolean> = {};
+  
+  // Test Open Food Facts with a known barcode (Coca Cola)
+  try {
+    const response = await fetch('https://world.openfoodfacts.org/api/v0/product/5449000000996.json', {
+      timeout: 5000
+    });
+    testResults['openFoodFacts'] = response.ok;
+  } catch {
+    testResults['openFoodFacts'] = false;
+  }
+  
+  // Test UPC Database with a simple ping (avoiding rate limits)
+  try {
+    const response = await fetch('https://api.upcitemdb.com/prod/trial/lookup?upc=test', {
+      timeout: 5000
+    });
+    // Even an error response means the API is reachable
+    testResults['upcDatabase'] = true;
+  } catch {
+    testResults['upcDatabase'] = false;
+  }
+  
+  return testResults;
+}
+
+/**
+ * Get configuration info about the barcode lookup service
+ */
+export function getServiceConfig(): Record<string, any> {
+  return {
+    freeAPIs: ['Open Food Facts', 'UPC Database (Free Tier)'],
+    optionalAPIs: ['UPC Database (with API key)'],
+    cacheEnabled: true,
+    cacheTTL: '24 hours',
+    rateLimiting: {
+      openFoodFacts: '200ms',
+      upcDatabase: '1000ms (free tier)',
+      default: '100ms'
+    },
+    environmentVariables: {
+      UPC_DATABASE_API_KEY: 'Optional - for paid UPC Database tier'
+    }
+  };
 }

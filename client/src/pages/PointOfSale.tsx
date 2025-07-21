@@ -36,70 +36,19 @@ interface CartItem {
 }
 
 const PointOfSale: React.FC = () => {
-  const { currentPage } = useAppContext();
+  const { currentPage, currentUser } = useAppContext();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [isScanning, setIsScanning] = useState(false);
-  const [scannerTimeout, setScannerTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState(0);
-  const [countdownInterval, setCountdownInterval] = useState<NodeJS.Timeout | null>(null);
-  const [currentUser, setCurrentUser] = useState({ name: "Admin User", username: "admin" }); // Default to Admin User
+  // Scanner is always active in POS section - no manual controls needed
+  const isScanning = true;
 
   const { toast } = useToast();
 
-  // Auto-activate scanner on component mount
-  useEffect(() => {
-    // Auto-activate scanner when component mounts
-    setIsScanning(true);
-
-    // Cleanup on unmount
-    return () => {
-      if (scannerTimeout) {
-        clearTimeout(scannerTimeout);
-      }
-      if (countdownInterval) {
-        clearInterval(countdownInterval);
-      }
-    };
-  }, []); // Run only on mount
+  // No need for manual scanner activation/deactivation - it's always active in POS
   
-  // Helper function to format time remaining
-  const formatTimeRemaining = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-  
-
-  
-
-  
-  // Fetch current user information
-  const { data: users } = useQuery({
-    queryKey: ['/api/users'],
-    queryFn: async () => {
-      const response = await apiRequest('/api/users');
-      if (response && response instanceof Response) {
-        return await response.json();
-      }
-      return [];
-    }
-  });
-  
-  // Set the current user to the first admin user in the list
-  useEffect(() => {
-    if (users && users.length > 0) {
-      // In a real app, this would use authentication to determine the current user
-      // For now, we'll just use the first admin user
-      const adminUser = users.find((user: any) => user.role === 'admin') || users[0];
-      if (adminUser) {
-        setCurrentUser({ 
-          name: adminUser.name,
-          username: adminUser.username 
-        });
-      }
-    }
-  }, [users]);
+  // Fallback user info for POS functionality
+  const fallbackUser = { name: "POS User", username: "pos" };
+  const effectiveUser = currentUser || fallbackUser;
   
   // Fetch inventory data sorted by popularity with shorter cache time for real-time updates
   const { data: inventoryItems, refetch: refetchInventory } = useQuery({
@@ -128,7 +77,7 @@ const PointOfSale: React.FC = () => {
   const cartTotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   
-  // Handle barcode scan
+  // Handle barcode scan with improved error handling
   const handleBarcodeScan = (barcode: string) => {
     const item = inventoryItems?.find(item => {
       return item.barcode === barcode || item.sku === barcode;
@@ -137,64 +86,19 @@ const PointOfSale: React.FC = () => {
     if (item) {
       addToCart(item);
       toast({
-        description: `${item.name} added to cart`,
+        description: `✅ ${item.name} added to cart`,
         duration: 2000,
       });
-      
-      // Reset the scanner timer when an item is successfully scanned
-      if (isScanning) {
-        resetScannerTimer();
-      }
     } else {
       toast({
-        description: `Barcode ${barcode} not found in inventory`,
+        description: `❌ Barcode ${barcode} not found in inventory`,
         variant: "destructive",
         duration: 3000,
       });
     }
   };
 
-  // Function to reset the scanner timer
-  const resetScannerTimer = () => {
-    // Clear existing timeout and interval
-    if (scannerTimeout) {
-      clearTimeout(scannerTimeout);
-    }
-    if (countdownInterval) {
-      clearInterval(countdownInterval);
-    }
-    
-    // Set new 30-minute timer
-    const timeoutDuration = 30 * 60 * 1000; // 30 minutes in milliseconds
-    setTimeRemaining(30 * 60); // 30 minutes in seconds
-    
-    // Set timeout for deactivation
-    const timeout = setTimeout(() => {
-      setIsScanning(false);
-      setTimeRemaining(0);
-      toast({
-        title: "Scanner Deactivated",
-        description: "Barcode scanner automatically turned off after 30 minutes",
-        duration: 3000,
-      });
-    }, timeoutDuration);
-    
-    setScannerTimeout(timeout);
-    
-    // Set interval for countdown
-    const interval = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    
-    setCountdownInterval(interval);
-  };
-
-  // Direct barcode scanner logic - stays active for 5 minutes or until manually turned off
+  // Improved direct barcode scanner with better reliability
   useEffect(() => {
     if (!isScanning) return;
 
@@ -208,7 +112,8 @@ const PointOfSale: React.FC = () => {
       }
 
       const currentTime = Date.now();
-      if (currentTime - lastKeyTime > 1000) {
+      // Reduced timeout for better reliability
+      if (currentTime - lastKeyTime > 500) {
         scanBuffer = '';
       }
       lastKeyTime = currentTime;
@@ -224,8 +129,8 @@ const PointOfSale: React.FC = () => {
         e.preventDefault();
         e.stopPropagation();
 
-        // Only process barcodes that are at least 8 characters long
-        if (scanBuffer.length >= 8 && (scanBuffer.length === 12 || scanBuffer.length === 13)) {
+        // Process barcodes of common lengths automatically
+        if (scanBuffer.length >= 8 && (scanBuffer.length === 12 || scanBuffer.length === 13 || scanBuffer.length === 14)) {
           handleBarcodeScan(scanBuffer);
           scanBuffer = '';
         }
@@ -234,35 +139,7 @@ const PointOfSale: React.FC = () => {
 
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [isScanning]);
-
-  // Auto-deactivate scanner after 30 minutes with countdown
-  useEffect(() => {
-    if (isScanning) {
-      resetScannerTimer();
-    } else {
-      // Clear timeout and interval when scanner is turned off
-      if (scannerTimeout) {
-        clearTimeout(scannerTimeout);
-        setScannerTimeout(null);
-      }
-      if (countdownInterval) {
-        clearInterval(countdownInterval);
-        setCountdownInterval(null);
-      }
-      setTimeRemaining(0);
-    }
-
-    // Cleanup timeouts on component unmount
-    return () => {
-      if (scannerTimeout) {
-        clearTimeout(scannerTimeout);
-      }
-      if (countdownInterval) {
-        clearInterval(countdownInterval);
-      }
-    };
-  }, [isScanning]);
+  }, [isScanning, inventoryItems]);
   
   // Add item to cart - with optimized rendering to prevent screen distortion
   const addToCart = (item: InventoryItem) => {
@@ -347,7 +224,7 @@ const PointOfSale: React.FC = () => {
           unit: item.unit,
           subtotal: item.subtotal
         })),
-        cashier: currentUser.username, // Use the current user's username from state
+        cashier: effectiveUser.username, // Use the actual logged-in user
         amount: cartTotal,
         status: "Completed"
       };
@@ -425,42 +302,10 @@ const PointOfSale: React.FC = () => {
                   >
                     Refresh
                   </button>
-                  <button 
-                    onClick={() => {
-                      if (isScanning) {
-                        // Manual deactivation
-                        setIsScanning(false);
-                        toast({
-                          title: "Scanner Deactivated",
-                          description: "Barcode scanner manually turned off",
-                          duration: 2000,
-                        });
-                      } else {
-                        // Manual reactivation
-                        setIsScanning(true);
-                        toast({
-                          title: "Scanner Reactivated",
-                          description: "Barcode scanner turned back on for 30 minutes",
-                          duration: 2000,
-                        });
-                      }
-                    }} 
-                    className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                      isScanning 
-                        ? 'bg-red-100 text-red-700 hover:bg-red-200 cursor-pointer' 
-                        : 'bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer'
-                    }`}
-                  >
-                    {isScanning ? (
-                      <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                        <span>Scanner Active ({formatTimeRemaining(timeRemaining)})</span>
-                        <span className="ml-2 text-xs">[Click to Stop]</span>
-                      </div>
-                    ) : (
-                      'Reactivate Scanner'
-                    )}
-                  </button>
+                  <div className="flex items-center space-x-2 px-3 py-2 rounded-md bg-green-100 text-green-800">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-sm font-medium">Scanner Active</span>
+                  </div>
                 </div>
               </div>
               
@@ -632,7 +477,7 @@ const PointOfSale: React.FC = () => {
         }}
         cart={cart}
         cartTotal={cartTotal}
-        cashier={currentUser.username}
+        cashier={effectiveUser.username}
         transactionId={currentTransactionId} // Pass the actual transaction ID from the sale
       />
     </>

@@ -90,12 +90,12 @@ function detectRegion(barcode: string): string {
   const numPrefix = parseInt(prefix);
   
   // GS1 country codes (simplified)
-  if (numPrefix >= 000 && numPrefix <= 019) return 'US_CANADA';
-  if (numPrefix >= 020 && numPrefix <= 029) return 'RESTRICTED';
-  if (numPrefix >= 030 && numPrefix <= 039) return 'US_DRUGS';
-  if (numPrefix >= 040 && numPrefix <= 049) return 'RESTRICTED';
-  if (numPrefix >= 050 && numPrefix <= 059) return 'COUPONS';
-  if (numPrefix >= 060 && numPrefix <= 099) return 'US_CANADA';
+  if (numPrefix >= 0 && numPrefix <= 19) return 'US_CANADA';
+  if (numPrefix >= 20 && numPrefix <= 29) return 'RESTRICTED';
+  if (numPrefix >= 30 && numPrefix <= 39) return 'US_DRUGS';
+  if (numPrefix >= 40 && numPrefix <= 49) return 'RESTRICTED';
+  if (numPrefix >= 50 && numPrefix <= 59) return 'COUPONS';
+  if (numPrefix >= 60 && numPrefix <= 99) return 'US_CANADA';
   if (numPrefix >= 100 && numPrefix <= 139) return 'US_CANADA';
   if (numPrefix >= 200 && numPrefix <= 299) return 'RESTRICTED';
   if (numPrefix >= 300 && numPrefix <= 379) return 'FRANCE';

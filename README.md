@@ -376,44 +376,45 @@ The built files will be in the `dist/` directory.
 
 ### Environment Variables
 
+**Core Application:**
 - `NODE_ENV` - Environment mode (development/production)
 - `PORT` - Server port (default: 5000)
 - `SESSION_SECRET` - Session encryption secret
 - `SESSION_MAX_AGE` - Session timeout in milliseconds
 
-#### Barcode Lookup API Configuration (Optional)
+**Barcode Lookup (Optional):**
+- `UPC_DATABASE_API_KEY` - UPC Database API key for enhanced rate limits (optional)
 
-The application includes enhanced barcode lookup functionality with multiple API sources. Most sources work without configuration, but you can enable additional premium sources:
+#### Barcode Lookup API Configuration
 
-**Google Product Search API (Optional):**
-- `GOOGLE_API_KEY` - Google Custom Search API key
-- `GOOGLE_SEARCH_ENGINE_ID` - Custom Search Engine ID
+The application includes barcode lookup functionality focused on **free APIs** that work out of the box. The system is designed to provide reliable product information without requiring paid subscriptions or complex API setups.
 
-To set up Google Product Search:
-1. Get a Google Custom Search API key from [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a Custom Search Engine at [cse.google.com](https://cse.google.com/)
-3. Focus the search engine on product catalog sites
-4. Set the environment variables in your `.env` file
+**Free APIs (No configuration required):**
+- **Open Food Facts API** - Comprehensive food product database with multi-language support
+- **UPC Database API (Free Tier)** - General product database (100 requests/day, 1 request/second)
 
-**Amazon Product API (Optional):**
-- `AMAZON_ACCESS_KEY` - Amazon Product Advertising API access key
-- `AMAZON_SECRET_KEY` - Amazon Product Advertising API secret key
-- `AMAZON_ASSOCIATE_TAG` - Amazon Associates tag
+**Optional Enhanced UPC Database:**
+- `UPC_DATABASE_API_KEY` - UPC Database API key for paid tier (higher rate limits)
 
-To set up Amazon Product API:
-1. Register for the [Amazon Associates program](https://associates.amazon.com/)
-2. Apply for [Product Advertising API access](https://webservices.amazon.com/paapi5/documentation/)
-3. Get your credentials from the Amazon Developer Console
-4. Set the environment variables in your `.env` file
+To set up enhanced UPC Database access:
+1. Register for a free account at [UPCItemDB](https://www.upcitemdb.com/)
+2. Optionally upgrade to a paid plan for higher rate limits
+3. Set the `UPC_DATABASE_API_KEY` environment variable in your `.env` file
 
-**Built-in Sources (No configuration required):**
-- Open Food Facts API - Comprehensive food product database
-- UPC Database API - General product database
-- EAN Search API - European product database
-- Barcode Spider API - Additional product source
-- Barcode Lookup - Web scraping fallback
+**Features:**
+- ✅ **Works out of the box** - No API keys required for basic functionality
+- ✅ **Intelligent caching** - 24-hour TTL for successful lookups, 1-hour for failures
+- ✅ **Rate limiting** - Respects API limits (200ms for Open Food Facts, 1s for UPC Database free tier)
+- ✅ **Multi-language support** - Prioritizes product names based on barcode region
+- ✅ **Enhanced error handling** - Detailed error messages and logging
+- ✅ **TypeScript validated** - API responses validated with Zod schemas
+- ✅ **Regional optimization** - Supports GS1 region detection for better results
 
-The system includes intelligent caching (24-hour TTL) and rate limiting to optimize performance and respect API limits.
+**API Testing and Monitoring:**
+The system includes built-in functions for testing API availability and monitoring performance:
+- API availability testing
+- Configuration information
+- Detailed logging for debugging
 
 ### Features Configuration
 

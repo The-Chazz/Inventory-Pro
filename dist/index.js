@@ -1030,6 +1030,49 @@ import { createServer } from "http";
 import fs5 from "fs/promises";
 
 // server/productLookup.ts
+import { z } from "zod";
+var ProductInfoSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().optional(),
+  brand: z.string().optional(),
+  category: z.string().optional(),
+  imageUrl: z.string().url().optional().or(z.literal("")),
+  success: z.boolean(),
+  source: z.string().optional(),
+  region: z.string().optional(),
+  language: z.string().optional(),
+  errorMessage: z.string().optional()
+});
+var OpenFoodFactsProductSchema = z.object({
+  status: z.number(),
+  product: z.object({
+    product_name: z.string().optional(),
+    product_name_en: z.string().optional(),
+    product_name_fr: z.string().optional(),
+    product_name_es: z.string().optional(),
+    abbreviated_product_name: z.string().optional(),
+    generic_name: z.string().optional(),
+    generic_name_en: z.string().optional(),
+    brands: z.string().optional(),
+    categories: z.string().optional(),
+    categories_tags: z.array(z.string()).optional(),
+    image_front_url: z.string().url().optional().or(z.literal("")),
+    image_url: z.string().url().optional().or(z.literal("")),
+    image_front_small_url: z.string().url().optional().or(z.literal("")),
+    ingredients_text: z.string().optional(),
+    ingredients_text_en: z.string().optional()
+  }).partial().optional()
+}).partial();
+var UPCDatabaseResponseSchema = z.object({
+  code: z.string(),
+  items: z.array(z.object({
+    title: z.string().optional(),
+    description: z.string().optional(),
+    brand: z.string().optional(),
+    category: z.string().optional(),
+    images: z.array(z.string().url()).optional()
+  }).partial()).optional()
+}).partial();
 var ProductCache = class {
   cache = /* @__PURE__ */ new Map();
   defaultTTL = 24 * 60 * 60 * 1e3;
@@ -1059,21 +1102,62 @@ var ProductCache = class {
   }
 };
 var RateLimiter = class {
-  lastCall = 0;
-  minInterval = 100;
-  // Minimum 100ms between calls
-  async throttle() {
+  lastCalls = /* @__PURE__ */ new Map();
+  defaultMinInterval = 100;
+  // 100ms general rate limit
+  upcDatabaseInterval = 1e3;
+  // 1 second for UPC Database free tier
+  openFoodFactsInterval = 200;
+  // 200ms for Open Food Facts to be respectful
+  async throttle(apiName = "default") {
     const now = Date.now();
-    const timeSinceLastCall = now - this.lastCall;
-    if (timeSinceLastCall < this.minInterval) {
-      const delay = this.minInterval - timeSinceLastCall;
+    const lastCall = this.lastCalls.get(apiName) || 0;
+    const minInterval = this.getMinInterval(apiName);
+    const timeSinceLastCall = now - lastCall;
+    if (timeSinceLastCall < minInterval) {
+      const delay = minInterval - timeSinceLastCall;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    this.lastCall = Date.now();
+    this.lastCalls.set(apiName, Date.now());
+  }
+  getMinInterval(apiName) {
+    switch (apiName) {
+      case "upcDatabase":
+        return this.upcDatabaseInterval;
+      case "openFoodFacts":
+        return this.openFoodFactsInterval;
+      default:
+        return this.defaultMinInterval;
+    }
+  }
+};
+var BarcodeLogger = class _BarcodeLogger {
+  static instance;
+  static getInstance() {
+    if (!_BarcodeLogger.instance) {
+      _BarcodeLogger.instance = new _BarcodeLogger();
+    }
+    return _BarcodeLogger.instance;
+  }
+  logAttempt(barcode, apiName) {
+    console.log(`[ProductLookup] Attempting ${apiName} for barcode: ${barcode}`);
+  }
+  logSuccess(barcode, apiName, productName) {
+    console.log(`[ProductLookup] SUCCESS ${apiName} for barcode ${barcode}: ${productName || "Found product"}`);
+  }
+  logError(barcode, apiName, error) {
+    console.warn(`[ProductLookup] ERROR ${apiName} for barcode ${barcode}:`, error.message || error);
+  }
+  logCacheHit(barcode) {
+    console.log(`[ProductLookup] Cache HIT for barcode: ${barcode}`);
+  }
+  logCacheMiss(barcode) {
+    console.log(`[ProductLookup] Cache MISS for barcode: ${barcode}`);
   }
 };
 var productCache = new ProductCache();
 var rateLimiter = new RateLimiter();
+var logger = BarcodeLogger.getInstance();
 function detectRegion(barcode) {
   const prefix = barcode.substring(0, 3);
   const numPrefix = parseInt(prefix);
@@ -1340,186 +1424,149 @@ async function searchCARICOMRegional(barcode) {
   return { success: false };
 }
 async function searchOpenFoodFacts(barcode) {
+  const apiName = "openFoodFacts";
   try {
-    await rateLimiter.throttle();
+    logger.logAttempt(barcode, "Open Food Facts");
+    await rateLimiter.throttle(apiName);
     const region = detectRegion(barcode);
     const languages = getRegionLanguages(region);
-    const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
-    const data = await response.json();
+    const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`, {
+      headers: {
+        "User-Agent": "Inventory-Pro/1.0.0 (Product Lookup Service)"
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const rawData = await response.json();
+    const validationResult = OpenFoodFactsProductSchema.safeParse(rawData);
+    if (!validationResult.success) {
+      throw new Error(`Invalid API response structure: ${validationResult.error.message}`);
+    }
+    const data = validationResult.data;
     if (data.status === 1 && data.product) {
       const product = data.product;
       let name = "";
       let description = "";
       for (const lang of languages) {
-        if (!name && product[`product_name_${lang}`]) {
-          name = product[`product_name_${lang}`];
+        const langField = `product_name_${lang}`;
+        if (!name && product[langField]) {
+          name = product[langField];
           break;
         }
       }
       if (!name) {
-        name = product.product_name || product.product_name_en || product.product_name_fr || product.product_name_es || product.abbreviated_product_name || product.generic_name || product.generic_name_en;
+        name = product.product_name || product.product_name_en || product.product_name_fr || product.product_name_es || product.abbreviated_product_name || product.generic_name || product.generic_name_en || "";
       }
       for (const lang of languages) {
-        if (!description && product[`generic_name_${lang}`]) {
-          description = product[`generic_name_${lang}`];
+        const langField = `generic_name_${lang}`;
+        if (!description && product[langField]) {
+          description = product[langField];
           break;
         }
       }
       if (!description) {
-        description = product.generic_name || product.generic_name_en || product.ingredients_text_en || product.ingredients_text;
+        description = product.generic_name || product.generic_name_en || product.ingredients_text_en || product.ingredients_text || "";
       }
-      const imageUrl = product.image_front_url || product.image_url || product.image_front_small_url || product.selected_images && product.selected_images.front && product.selected_images.front.display && product.selected_images.front.display.en;
-      if (name) {
-        return {
+      let imageUrl = product.image_front_url || product.image_url || product.image_front_small_url || "";
+      if (imageUrl && !imageUrl.startsWith("http")) {
+        imageUrl = "";
+      }
+      if (name.trim()) {
+        const result = {
           name: name.trim(),
           description: description ? description.trim() : void 0,
-          brand: product.brands,
-          category: product.categories || product.categories_tags?.[0],
-          imageUrl,
+          brand: product.brands || void 0,
+          category: product.categories || product.categories_tags?.[0] || void 0,
+          imageUrl: imageUrl || void 0,
           success: true,
           source: "Open Food Facts",
           region,
           language: languages[0]
         };
+        logger.logSuccess(barcode, "Open Food Facts", result.name);
+        return result;
       }
     }
+    return {
+      success: false,
+      errorMessage: "Product not found in Open Food Facts database"
+    };
   } catch (error) {
+    logger.logError(barcode, "Open Food Facts", error);
+    return {
+      success: false,
+      errorMessage: `Open Food Facts API error: ${error.message}`
+    };
   }
-  return { success: false };
 }
 async function searchUPCDatabase(barcode) {
+  const apiName = "upcDatabase";
   try {
-    await rateLimiter.throttle();
-    const response = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${barcode}`);
-    const data = await response.json();
+    logger.logAttempt(barcode, "UPC Database");
+    await rateLimiter.throttle(apiName);
+    const apiKey = process.env.UPC_DATABASE_API_KEY;
+    const baseUrl = apiKey ? "https://api.upcitemdb.com/prod/trial/lookup" : "https://api.upcitemdb.com/prod/trial/lookup";
+    const url = `${baseUrl}?upc=${barcode}`;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Inventory-Pro/1.0.0 (Product Lookup Service)",
+        ...apiKey && { "user_key": apiKey }
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const rawData = await response.json();
+    const validationResult = UPCDatabaseResponseSchema.safeParse(rawData);
+    if (!validationResult.success) {
+      throw new Error(`Invalid API response structure: ${validationResult.error.message}`);
+    }
+    const data = validationResult.data;
     if (data.code === "OK" && data.items && data.items.length > 0) {
       const item = data.items[0];
-      return {
-        name: item.title,
-        description: item.description,
-        brand: item.brand,
-        category: item.category,
+      const result = {
+        name: item.title || void 0,
+        description: item.description || void 0,
+        brand: item.brand || void 0,
+        category: item.category || void 0,
         imageUrl: item.images && item.images.length > 0 ? item.images[0] : void 0,
         success: true,
-        source: "UPC Database"
+        source: apiKey ? "UPC Database (API Key)" : "UPC Database (Free)"
       };
+      logger.logSuccess(barcode, "UPC Database", result.name);
+      return result;
+    } else if (data.code === "RATE_LIMIT_EXCEEDED") {
+      throw new Error("Rate limit exceeded for UPC Database free tier");
     }
+    return {
+      success: false,
+      errorMessage: "Product not found in UPC Database"
+    };
   } catch (error) {
+    logger.logError(barcode, "UPC Database", error);
+    return {
+      success: false,
+      errorMessage: `UPC Database API error: ${error.message}`
+    };
   }
-  return { success: false };
-}
-async function searchBarcodeSpider(barcode) {
-  try {
-    await rateLimiter.throttle();
-    const response = await fetch(`https://api.barcodespider.com/v1/lookup?token=free&upc=${barcode}`);
-    const data = await response.json();
-    if (data.item_response && data.item_response.message === "success") {
-      const item = data.item_response.item_attributes;
-      return {
-        name: item.title,
-        description: item.description,
-        brand: item.brand,
-        category: item.category,
-        imageUrl: item.image,
-        success: true,
-        source: "Barcode Spider"
-      };
-    }
-  } catch (error) {
-  }
-  return { success: false };
-}
-async function searchBarcodeLookup(barcode) {
-  try {
-    await rateLimiter.throttle();
-    const response = await fetch(`https://www.barcodelookup.com/${barcode}`);
-    const text = await response.text();
-    const nameMatch = text.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-    const imageMatch = text.match(/<meta property="og:image" content="([^"]+)"/i);
-    const descMatch = text.match(/<meta property="og:description" content="([^"]+)"/i);
-    if (nameMatch && nameMatch[1]) {
-      return {
-        name: nameMatch[1].trim(),
-        description: descMatch ? descMatch[1].trim() : void 0,
-        imageUrl: imageMatch ? imageMatch[1].trim() : void 0,
-        success: true,
-        source: "Barcode Lookup"
-      };
-    }
-  } catch (error) {
-  }
-  return { success: false };
-}
-async function searchGoogleProducts(barcode) {
-  try {
-    const apiKey = process.env.GOOGLE_API_KEY;
-    const searchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
-    if (!apiKey || !searchEngineId) {
-      return { success: false };
-    }
-    const query = `product barcode ${barcode}`;
-    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
-    await rateLimiter.throttle();
-    const response = await fetch(url);
-    const data = await response.json();
-    if (data.items && data.items.length > 0) {
-      const item = data.items[0];
-      return {
-        name: item.title,
-        description: item.snippet,
-        imageUrl: item.pagemap?.cse_image?.[0]?.src,
-        success: true,
-        source: "Google Product Search"
-      };
-    }
-  } catch (error) {
-  }
-  return { success: false };
-}
-async function searchAmazonProducts(barcode) {
-  try {
-    const accessKey = process.env.AMAZON_ACCESS_KEY;
-    const secretKey = process.env.AMAZON_SECRET_KEY;
-    const associateTag = process.env.AMAZON_ASSOCIATE_TAG;
-    if (!accessKey || !secretKey || !associateTag) {
-      return { success: false };
-    }
-    await rateLimiter.throttle();
-    return { success: false };
-  } catch (error) {
-  }
-  return { success: false };
-}
-async function searchEANSearch(barcode) {
-  try {
-    await rateLimiter.throttle();
-    const response = await fetch(`https://www.ean-search.org/api?op=barcode-lookup&format=json&ean=${barcode}`);
-    const data = await response.json();
-    if (data && data.length > 0 && data[0].name) {
-      const product = data[0];
-      return {
-        name: product.name,
-        description: product.description,
-        category: product.categoryText,
-        imageUrl: product.image,
-        success: true,
-        source: "EAN Search"
-      };
-    }
-  } catch (error) {
-  }
-  return { success: false };
 }
 async function lookupProductByBarcode(barcode) {
   const cleanBarcode = barcode.replace(/\D/g, "");
   if (!cleanBarcode || cleanBarcode.length < 8) {
-    return { success: false };
+    logger.logError(cleanBarcode, "Validation", new Error("Invalid barcode length"));
+    return {
+      success: false,
+      errorMessage: "Invalid barcode: must be at least 8 digits"
+    };
   }
   const cacheKey = `barcode_${cleanBarcode}`;
   const cached = productCache.get(cacheKey);
   if (cached) {
+    logger.logCacheHit(cleanBarcode);
     return { ...cached, source: `${cached.source} (cached)` };
   }
+  logger.logCacheMiss(cleanBarcode);
   const barcodeVariants = [
     cleanBarcode,
     // Add leading zeros for UPC-A format (12 digits)
@@ -1530,29 +1577,21 @@ async function lookupProductByBarcode(barcode) {
     cleanBarcode.length > 8 ? cleanBarcode.substring(0, cleanBarcode.length - 1) : null
   ].filter(Boolean);
   const region = detectRegion(cleanBarcode);
-  let apis = [
+  const freeApis = [
     searchOpenFoodFacts,
-    // Most comprehensive for food products
-    searchUPCDatabase,
-    // Good general product database
-    searchGS1GEPIR,
-    // Global GS1 database
-    searchEANSearch,
-    // Good for European products
-    searchGoogleProducts,
-    // Configurable with API key
-    searchAmazonProducts,
-    // Configurable with API credentials
-    searchBarcodeSpider,
-    // Additional source
-    searchBarcodeLookup
-    // Web scraping fallback
+    // Comprehensive free food product database
+    searchUPCDatabase
+    // General product database with free tier
   ];
+  let apis = [...freeApis];
   if (region === "CHINA" || cleanBarcode.startsWith("69")) {
     apis = [searchChinaGBT, searchGS1GEPIR, ...apis];
   } else if (region === "CARICOM" || ["740", "741", "742", "743", "744", "745", "746"].includes(cleanBarcode.substring(0, 3))) {
     apis = [searchGS1Caribbean, searchCARICOMRegional, searchGS1GEPIR, ...apis];
+  } else {
+    apis = [searchGS1GEPIR, ...apis];
   }
+  const errors = [];
   for (const barcodeVariant of barcodeVariants) {
     for (const api of apis) {
       try {
@@ -1563,14 +1602,20 @@ async function lookupProductByBarcode(barcode) {
             result.region = region;
           }
           return result;
+        } else if (result.errorMessage) {
+          errors.push(result.errorMessage);
         }
       } catch (error) {
-        console.warn(`API ${api.name} failed for barcode ${barcodeVariant}:`, error);
+        logger.logError(barcodeVariant, api.name, error);
+        errors.push(`${api.name}: ${error.message}`);
         continue;
       }
     }
   }
-  const failedResult = { success: false };
+  const failedResult = {
+    success: false,
+    errorMessage: `Product not found. Tried ${apis.length} APIs. Errors: ${errors.join("; ")}`
+  };
   productCache.set(cacheKey, failedResult, 60 * 60 * 1e3);
   return failedResult;
 }

@@ -166,6 +166,11 @@ const EditInventoryItemForm: React.FC<EditInventoryItemFormProps> = ({
     "Canned Goods",
     "Cleaning Supplies",
     "Personal Care",
+    "Hair Care",
+    "Toiletries",
+    "Cooking Supplies",
+    "Medicine",
+    "Alcohol",
     "Other"
   ];
 

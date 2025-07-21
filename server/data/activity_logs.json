@@ -710,6 +710,33 @@
       "category": "authentication",
       "details": "User logged in successfully",
       "timestamp": "2025-07-20T12:32:32.733Z"
+    },
+    {
+      "id": 80,
+      "userId": 1,
+      "username": "admin",
+      "action": "User Login",
+      "category": "authentication",
+      "details": "User logged in successfully",
+      "timestamp": "2025-07-21T01:15:53.677Z"
+    },
+    {
+      "id": 81,
+      "userId": 1,
+      "username": "admin",
+      "action": "Inventory Item Created",
+      "category": "inventory",
+      "details": "Added item: Test Product (SKU: TEST001), Quantity: 10 each",
+      "timestamp": "2025-07-21T01:17:31.488Z"
+    },
+    {
+      "id": 82,
+      "userId": 0,
+      "username": "unknown",
+      "action": "Sale Recorded",
+      "category": "sales",
+      "details": "Sale completed: ID TRX-20250721-1, Total: $5.99, Items: 1",
+      "timestamp": "2025-07-21T01:18:03.019Z"
     }
   ]
 }

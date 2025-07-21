@@ -33,6 +33,41 @@
       "status": "Completed",
       "id": "TRX-20250714-002",
       "date": "2025-07-14T16:01:42.018Z"
+    },
+    {
+      "cashier": "Admin User",
+      "amount": 15.5,
+      "items": [
+        {
+          "productId": 1,
+          "name": "Test Item",
+          "quantity": 1,
+          "price": 15.5,
+          "unit": "each",
+          "subtotal": 15.5
+        }
+      ],
+      "id": "TRX-20250721-1",
+      "date": "2025-07-21T02:01:41.718Z"
+    },
+    {
+      "cashier": "Admin User",
+      "amount": 25.75,
+      "items": [
+        {
+          "productId": 1,
+          "name": "Test Item 2",
+          "quantity": 1,
+          "price": 25.75,
+          "unit": "each",
+          "subtotal": 25.75
+        }
+      ],
+      "id": "TRX-20250721-2",
+      "date": "2025-07-21T02:02:25.623Z",
+      "status": "Refunded",
+      "refundedBy": "admin",
+      "refundDate": "2025-07-21T02:03:34.682Z"
     }
   ]
 }

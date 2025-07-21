@@ -737,6 +737,66 @@
       "category": "sales",
       "details": "Sale completed: ID TRX-20250721-1, Total: $5.99, Items: 1",
       "timestamp": "2025-07-21T01:18:03.019Z"
+    },
+    {
+      "id": 83,
+      "userId": 0,
+      "username": "SYSTEM",
+      "category": "system",
+      "details": "Daily stats reset completed - Previous: Sales $0.00, Refunds $0.00",
+      "timestamp": "2025-07-21T01:58:40.302Z"
+    },
+    {
+      "id": 84,
+      "userId": 1,
+      "username": "admin",
+      "action": "Sale Recorded",
+      "category": "sales",
+      "details": "Sale completed: ID TRX-20250721-1, Total: $15.50, Items: 1",
+      "timestamp": "2025-07-21T02:01:41.721Z"
+    },
+    {
+      "id": 85,
+      "userId": 0,
+      "username": "SYSTEM",
+      "category": "system",
+      "details": "Daily stats reset completed - Previous: Sales $15.50, Refunds $0.00",
+      "timestamp": "2025-07-21T02:02:02.560Z"
+    },
+    {
+      "id": 86,
+      "userId": 1,
+      "username": "admin",
+      "action": "Inventory Item Updated",
+      "category": "inventory",
+      "details": "Manual daily stats reset triggered by administrator",
+      "timestamp": "2025-07-21T02:02:02.560Z"
+    },
+    {
+      "id": 87,
+      "userId": 1,
+      "username": "admin",
+      "action": "Sale Recorded",
+      "category": "sales",
+      "details": "Sale completed: ID TRX-20250721-2, Total: $25.75, Items: 1",
+      "timestamp": "2025-07-21T02:02:25.626Z"
+    },
+    {
+      "id": 88,
+      "userId": 1,
+      "username": "admin",
+      "action": "Sale Refunded",
+      "category": "sales",
+      "details": "Refunded transaction: ID TRX-20250721-2, Total: $25.75, Items returned to inventory",
+      "timestamp": "2025-07-21T02:03:34.683Z"
+    },
+    {
+      "id": 89,
+      "userId": 0,
+      "username": "SYSTEM",
+      "category": "system",
+      "details": "Daily stats reset completed - Previous: Sales $15.50, Refunds $25.75",
+      "timestamp": "2025-07-21T02:04:41.348Z"
     }
   ]
 }

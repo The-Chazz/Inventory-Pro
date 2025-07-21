@@ -10,7 +10,7 @@
       "priceUnit": "each",
       "threshold": 10,
       "image": "",
-      "barcode": "",
+      "barcode": "123456789012",
       "id": 1,
       "status": "In Stock"
     },
@@ -24,7 +24,7 @@
       "priceUnit": "liter",
       "threshold": 5,
       "image": "",
-      "barcode": "",
+      "barcode": "987654321098",
       "id": 2,
       "status": "Low Stock"
     }

@@ -12,6 +12,17 @@ export interface Notification {
   createdAt: Date;
 }
 
+/**
+ * Current user interface
+ */
+export interface CurrentUser {
+  id: string;
+  name: string;
+  username: string;
+  role: string;
+  lastActive: string;
+}
+
 interface AppContextType {
   currentPage: string;
   setCurrentPage: (page: string) => void;
@@ -21,6 +32,9 @@ interface AppContextType {
   setShowLogoutModal: (show: boolean) => void;
   scannerActive: boolean;
   toggleScanner: () => void;
+  // User related state and functions
+  currentUser: CurrentUser | null;
+  setCurrentUser: (user: CurrentUser | null) => void;
   // Notification related state and functions
   notifications: Notification[];
   addNotification: (notification: Omit<Notification, 'id' | 'read' | 'createdAt'>) => void;
@@ -43,6 +57,8 @@ const AppContext = createContext<AppContextType>({
   setShowLogoutModal: () => {},
   scannerActive: false,
   toggleScanner: () => {},
+  currentUser: null,
+  setCurrentUser: () => {},
   notifications: [],
   addNotification: () => {},
   markNotificationAsRead: () => {},
@@ -56,18 +72,42 @@ const AppContext = createContext<AppContextType>({
 
 /**
  * App Context Provider component
- * Manages global application state including notifications
+ * Manages global application state including notifications and user authentication
  */
 export function AppProvider({ children }: { children: ReactNode }) {
   const [currentPage, setCurrentPage] = useState('Dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   
   // Notification state
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // Load user from sessionStorage on app start
+  useEffect(() => {
+    const storedUser = sessionStorage.getItem("user");
+    if (storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        setCurrentUser(userData);
+      } catch (error) {
+        console.error('Error parsing stored user data:', error);
+        sessionStorage.removeItem("user");
+      }
+    }
+  }, []);
+
+  // Save user to sessionStorage when currentUser changes
+  useEffect(() => {
+    if (currentUser) {
+      sessionStorage.setItem("user", JSON.stringify(currentUser));
+    } else {
+      sessionStorage.removeItem("user");
+    }
+  }, [currentUser]);
 
   // Update unread count whenever notifications change
   useEffect(() => {
@@ -191,6 +231,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setShowLogoutModal,
     scannerActive,
     toggleScanner,
+    currentUser,
+    setCurrentUser,
     notifications,
     addNotification,
     markNotificationAsRead,

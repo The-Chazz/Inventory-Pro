@@ -1,3 +1,987 @@
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
+// server/logStorage.ts
+import fs2 from "fs";
+import path2 from "path";
+var FileLogStorage, logStorage;
+var init_logStorage = __esm({
+  "server/logStorage.ts"() {
+    "use strict";
+    FileLogStorage = class {
+      logsCache = /* @__PURE__ */ new Map();
+      nextId = 1;
+      constructor() {
+        this.loadLogsFromFile();
+      }
+      async loadLogsFromFile() {
+        try {
+          const logsDir = path2.join(process.cwd(), "server", "data");
+          const logsFile = path2.join(logsDir, "activity_logs.json");
+          if (!fs2.existsSync(logsFile)) {
+            if (!fs2.existsSync(logsDir)) {
+              fs2.mkdirSync(logsDir, { recursive: true });
+            }
+            fs2.writeFileSync(logsFile, JSON.stringify({ logs: [] }));
+            return;
+          }
+          const data = JSON.parse(fs2.readFileSync(logsFile, "utf-8"));
+          if (data.logs && Array.isArray(data.logs)) {
+            data.logs.forEach((log2) => {
+              this.logsCache.set(log2.id, {
+                ...log2,
+                timestamp: new Date(log2.timestamp)
+              });
+              if (log2.id >= this.nextId) {
+                this.nextId = log2.id + 1;
+              }
+            });
+          }
+        } catch (error) {
+          this.logsCache.clear();
+          this.nextId = 1;
+        }
+      }
+      async saveLogsToFile() {
+        try {
+          const logsDir = path2.join(process.cwd(), "server", "data");
+          const logsFile = path2.join(logsDir, "activity_logs.json");
+          if (!fs2.existsSync(logsDir)) {
+            fs2.mkdirSync(logsDir, { recursive: true });
+          }
+          const logs = Array.from(this.logsCache.values());
+          fs2.writeFileSync(logsFile, JSON.stringify({ logs }, null, 2));
+        } catch (error) {
+          console.error("Error saving logs to file:", error);
+        }
+      }
+      async createLog(log2) {
+        const newLog = {
+          id: this.nextId++,
+          userId: log2.userId,
+          username: log2.username,
+          action: log2.action,
+          category: log2.category,
+          details: log2.details || "",
+          timestamp: /* @__PURE__ */ new Date()
+        };
+        this.logsCache.set(newLog.id, newLog);
+        await this.saveLogsToFile();
+        return newLog;
+      }
+      async getLogs() {
+        return Array.from(this.logsCache.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      }
+      async getLogsByCategory(category) {
+        return Array.from(this.logsCache.values()).filter((log2) => log2.category === category).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      }
+      async getLogsByUser(userId) {
+        return Array.from(this.logsCache.values()).filter((log2) => log2.userId === userId).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      }
+      async getLogById(id) {
+        return this.logsCache.get(id);
+      }
+    };
+    logStorage = new FileLogStorage();
+  }
+});
+
+// server/logger.ts
+var logger_exports = {};
+__export(logger_exports, {
+  ActivityLogger: () => ActivityLogger,
+  LOG_ACTIONS: () => LOG_ACTIONS,
+  LOG_CATEGORIES: () => LOG_CATEGORIES
+});
+var LOG_CATEGORIES, LOG_ACTIONS, ActivityLogger;
+var init_logger = __esm({
+  "server/logger.ts"() {
+    "use strict";
+    init_logStorage();
+    LOG_CATEGORIES = {
+      USER: "user",
+      INVENTORY: "inventory",
+      SALES: "sales",
+      LOSSES: "losses",
+      SETTINGS: "settings",
+      AUTHENTICATION: "authentication",
+      SYSTEM: "system"
+    };
+    LOG_ACTIONS = {
+      USER: {
+        CREATE: "User Created",
+        UPDATE: "User Updated",
+        DELETE: "User Deleted",
+        STATUS_CHANGE: "User Status Changed"
+      },
+      INVENTORY: {
+        CREATE: "Inventory Item Created",
+        UPDATE: "Inventory Item Updated",
+        DELETE: "Inventory Item Deleted",
+        BULK_IMPORT: "Bulk Inventory Import"
+      },
+      SALES: {
+        CREATE: "Sale Recorded",
+        REPRINT: "Receipt Reprinted",
+        REFUND: "Sale Refunded"
+      },
+      LOSSES: {
+        CREATE: "Loss Recorded",
+        UPDATE: "Loss Updated"
+      },
+      SETTINGS: {
+        UPDATE: "Settings Updated"
+      },
+      AUTHENTICATION: {
+        LOGIN: "User Login",
+        LOGOUT: "User Logout",
+        FAILED_LOGIN: "Failed Login Attempt"
+      },
+      SYSTEM: {
+        ERROR: "System Error",
+        STARTUP: "System Startup"
+      }
+    };
+    ActivityLogger = class {
+      // Log any activity
+      static async log(userId, username, category, action, details) {
+        try {
+          const logEntry = {
+            userId,
+            username,
+            category,
+            action,
+            details: details || ""
+          };
+          await logStorage.createLog(logEntry);
+        } catch (error) {
+          console.error("Failed to log activity:", error);
+        }
+      }
+      // Helper methods for common log types
+      static async logUserActivity(userId, username, action, details) {
+        return this.log(userId, username, LOG_CATEGORIES.USER, action, details);
+      }
+      static async logInventoryActivity(userId, username, action, details) {
+        return this.log(userId, username, LOG_CATEGORIES.INVENTORY, action, details);
+      }
+      static async logSalesActivity(userId, username, action, details) {
+        return this.log(userId, username, LOG_CATEGORIES.SALES, action, details);
+      }
+      static async logLossActivity(userId, username, action, details) {
+        return this.log(userId, username, LOG_CATEGORIES.LOSSES, action, details);
+      }
+      static async logSettingsActivity(userId, username, action, details) {
+        return this.log(userId, username, LOG_CATEGORIES.SETTINGS, action, details);
+      }
+      static async logAuthActivity(userId, username, action, details) {
+        return this.log(userId, username, LOG_CATEGORIES.AUTHENTICATION, action, details);
+      }
+      static async logSystemActivity(action, details) {
+        return this.log(0, "SYSTEM", LOG_CATEGORIES.SYSTEM, action, details);
+      }
+    };
+  }
+});
+
+// server/dailyStatsReset.ts
+var DateUtils, DailyStatsResetManager, dailyStatsResetManager;
+var init_dailyStatsReset = __esm({
+  "server/dailyStatsReset.ts"() {
+    "use strict";
+    DateUtils = class {
+      /**
+       * Get the current date in UTC as YYYY-MM-DD string
+       */
+      static getCurrentDateUTC() {
+        const now = /* @__PURE__ */ new Date();
+        return now.toISOString().split("T")[0];
+      }
+      /**
+       * Get the start of day in UTC for a given date
+       */
+      static getStartOfDayUTC(date = /* @__PURE__ */ new Date()) {
+        const utcDate = new Date(date);
+        utcDate.setUTCHours(0, 0, 0, 0);
+        return utcDate;
+      }
+      /**
+       * Get the end of day in UTC for a given date
+       */
+      static getEndOfDayUTC(date = /* @__PURE__ */ new Date()) {
+        const utcDate = new Date(date);
+        utcDate.setUTCHours(23, 59, 59, 999);
+        return utcDate;
+      }
+      /**
+       * Check if two dates are the same day in UTC
+       */
+      static isSameDayUTC(date1, date2) {
+        return date1.toISOString().split("T")[0] === date2.toISOString().split("T")[0];
+      }
+      /**
+       * Check if a date is today in UTC
+       */
+      static isTodayUTC(date) {
+        return this.isSameDayUTC(date, /* @__PURE__ */ new Date());
+      }
+      /**
+       * Get milliseconds until next midnight UTC
+       */
+      static getMillisecondsUntilNextMidnightUTC() {
+        const now = /* @__PURE__ */ new Date();
+        const nextMidnight = new Date(now);
+        nextMidnight.setUTCDate(nextMidnight.getUTCDate() + 1);
+        nextMidnight.setUTCHours(0, 0, 0, 0);
+        return nextMidnight.getTime() - now.getTime();
+      }
+    };
+    DailyStatsResetManager = class {
+      resetInterval = null;
+      lastResetDate = null;
+      /**
+       * Start the daily stats reset scheduler
+       */
+      async start() {
+        console.log("Starting daily stats reset scheduler...");
+        const { fileStorage: fileStorage2 } = await Promise.resolve().then(() => (init_fileStorage(), fileStorage_exports));
+        await fileStorage2.recalculateTodayStats();
+        this.lastResetDate = DateUtils.getCurrentDateUTC();
+        this.scheduleNextReset();
+        this.resetInterval = setInterval(() => {
+          this.checkForDailyReset();
+        }, 60 * 60 * 1e3);
+        console.log("Daily stats reset scheduler started successfully");
+      }
+      /**
+       * Stop the daily stats reset scheduler
+       */
+      stop() {
+        if (this.resetInterval) {
+          clearInterval(this.resetInterval);
+          this.resetInterval = null;
+          console.log("Daily stats reset scheduler stopped");
+        }
+      }
+      /**
+       * Schedule the next reset to occur at midnight UTC
+       */
+      scheduleNextReset() {
+        const msUntilMidnight = DateUtils.getMillisecondsUntilNextMidnightUTC();
+        setTimeout(() => {
+          this.performDailyReset();
+        }, msUntilMidnight);
+        const nextMidnight = new Date(Date.now() + msUntilMidnight);
+        console.log(`Next daily stats reset scheduled for: ${nextMidnight.toISOString()}`);
+      }
+      /**
+       * Check if we need to perform a daily reset (backup check)
+       */
+      checkForDailyReset() {
+        const currentDate = DateUtils.getCurrentDateUTC();
+        if (this.lastResetDate !== currentDate) {
+          console.log(`Date changed detected: ${this.lastResetDate} -> ${currentDate}`);
+          this.performDailyReset();
+        }
+      }
+      /**
+       * Perform the actual daily reset of statistics
+       */
+      async performDailyReset() {
+        try {
+          console.log("Performing daily stats reset...");
+          const { fileStorage: fileStorage2 } = await Promise.resolve().then(() => (init_fileStorage(), fileStorage_exports));
+          const currentStats = await fileStorage2.getStats();
+          const previousSales = currentStats.todaySales;
+          const previousRefunds = currentStats.todayRefunds || 0;
+          await fileStorage2.updateStats({
+            todaySales: 0,
+            todayRefunds: 0,
+            netSales: 0
+          });
+          this.lastResetDate = DateUtils.getCurrentDateUTC();
+          const { ActivityLogger: ActivityLogger2, LOG_ACTIONS: LOG_ACTIONS2 } = await Promise.resolve().then(() => (init_logger(), logger_exports));
+          await ActivityLogger2.logSystemActivity(
+            LOG_ACTIONS2.SYSTEM.MAINTENANCE,
+            `Daily stats reset completed - Previous: Sales $${previousSales.toFixed(2)}, Refunds $${previousRefunds.toFixed(2)}`
+          );
+          console.log(`Daily stats reset completed successfully. Previous stats - Sales: $${previousSales.toFixed(2)}, Refunds: $${previousRefunds.toFixed(2)}`);
+          this.scheduleNextReset();
+        } catch (error) {
+          console.error("Error performing daily stats reset:", error);
+          try {
+            const { ActivityLogger: ActivityLogger2, LOG_ACTIONS: LOG_ACTIONS2 } = await Promise.resolve().then(() => (init_logger(), logger_exports));
+            await ActivityLogger2.logSystemActivity(
+              LOG_ACTIONS2.SYSTEM.ERROR,
+              `Daily stats reset failed: ${error}`
+            );
+          } catch (logError) {
+            console.error("Error logging daily stats reset failure:", logError);
+          }
+        }
+      }
+      /**
+       * Manually trigger a daily reset (for testing or admin purposes)
+       */
+      async manualReset() {
+        console.log("Manual daily stats reset triggered");
+        await this.performDailyReset();
+      }
+    };
+    dailyStatsResetManager = new DailyStatsResetManager();
+  }
+});
+
+// server/fileStorage.ts
+var fileStorage_exports = {};
+__export(fileStorage_exports, {
+  FileStorage: () => FileStorage,
+  fileStorage: () => fileStorage
+});
+import fs3 from "fs/promises";
+import path3 from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
+import { dirname } from "path";
+var __filename2, __dirname2, FileStorage, fileStorage;
+var init_fileStorage = __esm({
+  "server/fileStorage.ts"() {
+    "use strict";
+    init_dailyStatsReset();
+    __filename2 = fileURLToPath2(import.meta.url);
+    __dirname2 = dirname(__filename2);
+    FileStorage = class {
+      dataDir;
+      /**
+       * Initialize the storage system
+       */
+      constructor() {
+        this.dataDir = path3.join(__dirname2, "data");
+        this.initDataDir();
+      }
+      /**
+       * Ensures all necessary data files exist in the data directory
+       * Creates them with default data if they don't exist
+       */
+      async ensureDataFiles() {
+        const files = {
+          "users.json": JSON.stringify({ users: [
+            {
+              id: 1,
+              name: "Admin User",
+              username: "admin",
+              pin: "1234",
+              role: "admin",
+              lastActive: (/* @__PURE__ */ new Date()).toISOString(),
+              status: "active"
+            },
+            {
+              id: 2,
+              name: "Sarah Johnson",
+              username: "sarah",
+              pin: "5678",
+              role: "cashier",
+              lastActive: (/* @__PURE__ */ new Date()).toISOString(),
+              status: "active"
+            }
+          ] }),
+          "inventory.json": JSON.stringify({ items: [] }),
+          "sales.json": JSON.stringify({ sales: [] }),
+          "losses.json": JSON.stringify({ losses: [] }),
+          "stats.json": JSON.stringify({
+            stats: {
+              totalInventoryItems: 0,
+              todaySales: 0,
+              lowStockItems: 0,
+              activeUsers: 2,
+              totalInventoryValue: 0,
+              todayRefunds: 0,
+              netSales: 0
+            }
+          }),
+          "settings.json": JSON.stringify({
+            settings: {
+              storeName: "Inventory Pro Store",
+              storeAddress: "123 Main Street, City, State, 12345",
+              storePhone: "(555) 123-4567",
+              thankYouMessage: "Thank you for shopping with us!",
+              nextTransactionId: 1
+            }
+          }),
+          "popularity.json": JSON.stringify({
+            popularity: []
+          })
+        };
+        for (const [fileName, content] of Object.entries(files)) {
+          const filePath = path3.join(this.dataDir, fileName);
+          try {
+            await fs3.access(filePath);
+          } catch (error) {
+            await fs3.writeFile(filePath, content, "utf8");
+          }
+        }
+      }
+      /**
+       * Initialize the data directory for the application
+       */
+      async initDataDir() {
+        try {
+          await fs3.access(this.dataDir).catch(async () => {
+            await fs3.mkdir(this.dataDir, { recursive: true });
+          });
+          await this.ensureDataFiles();
+        } catch (error) {
+          console.error(`Failed to initialize data directory: ${error}`);
+        }
+      }
+      // Generic function to read data from a JSON file
+      async readData(fileName, key) {
+        try {
+          const filePath = path3.join(this.dataDir, fileName);
+          const data = await fs3.readFile(filePath, "utf8");
+          const parsed = JSON.parse(data);
+          return parsed[key] || [];
+        } catch (error) {
+          console.error(`Error reading ${fileName}:`, error);
+          return [];
+        }
+      }
+      // Generic function to write data to a JSON file
+      async writeData(fileName, key, data) {
+        try {
+          const filePath = path3.join(this.dataDir, fileName);
+          const fileContent = JSON.stringify({ [key]: data }, null, 2);
+          await fs3.writeFile(filePath, fileContent, "utf8");
+          return true;
+        } catch (error) {
+          console.error(`Error writing ${fileName}:`, error);
+          return false;
+        }
+      }
+      // User methods required by IStorage interface
+      async getUsers() {
+        return this.readData("users.json", "users");
+      }
+      async getUser(id) {
+        const users = await this.readData("users.json", "users");
+        return users.find((user) => user.id === id);
+      }
+      async getUserByUsername(username) {
+        const users = await this.readData("users.json", "users");
+        return users.find((user) => user.username === username);
+      }
+      async createUser(insertUser) {
+        const users = await this.readData("users.json", "users");
+        const newId = Math.max(0, ...users.map((user) => user.id)) + 1;
+        const now = /* @__PURE__ */ new Date();
+        const sessionValidUntil = new Date(now);
+        sessionValidUntil.setHours(sessionValidUntil.getHours() + 2);
+        const newUser = {
+          ...insertUser,
+          id: newId,
+          lastActive: now.toISOString(),
+          sessionValidUntil: sessionValidUntil.toISOString(),
+          status: insertUser.status || "Active"
+          // Ensure status is set
+        };
+        users.push(newUser);
+        await this.writeData("users.json", "users", users);
+        return newUser;
+      }
+      async updateUser(id, updates) {
+        const users = await this.readData("users.json", "users");
+        const userIndex = users.findIndex((user) => user.id === id);
+        if (userIndex === -1) {
+          return null;
+        }
+        const updatedUser = {
+          ...users[userIndex],
+          ...updates
+        };
+        users[userIndex] = updatedUser;
+        await this.writeData("users.json", "users", users);
+        return updatedUser;
+      }
+      async deleteUser(id) {
+        try {
+          const users = await this.readData("users.json", "users");
+          const initialLength = users.length;
+          const filteredUsers = users.filter((user) => user.id !== id);
+          if (filteredUsers.length === initialLength) {
+            return false;
+          }
+          await this.writeData("users.json", "users", filteredUsers);
+          return true;
+        } catch (error) {
+          console.error(`Error deleting user with id ${id}:`, error);
+          return false;
+        }
+      }
+      // Additional methods for inventory, sales, and stats
+      // Inventory methods
+      async getInventory() {
+        return this.readData("inventory.json", "items");
+      }
+      async getInventoryItem(id) {
+        const items = await this.readData("inventory.json", "items");
+        return items.find((item) => item.id === id);
+      }
+      async updateInventoryItem(id, updates) {
+        const items = await this.readData("inventory.json", "items");
+        const index = items.findIndex((item) => item.id === id);
+        if (index !== -1) {
+          const updatedItem = { ...items[index], ...updates };
+          if (updates.stock !== void 0 || updates.threshold !== void 0) {
+            updatedItem.status = updatedItem.stock <= updatedItem.threshold ? "Low Stock" : "In Stock";
+          }
+          items[index] = updatedItem;
+          await this.writeData("inventory.json", "items", items);
+          return items[index];
+        }
+        return null;
+      }
+      async addInventoryItem(item) {
+        const items = await this.readData("inventory.json", "items");
+        const newId = Math.max(0, ...items.map((item2) => item2.id)) + 1;
+        const newItem = {
+          ...item,
+          // Type cast to avoid TypeScript errors
+          id: newId,
+          status: item.stock < item.threshold ? "Low Stock" : "In Stock"
+        };
+        items.push(newItem);
+        await this.writeData("inventory.json", "items", items);
+        return newItem;
+      }
+      async deleteInventoryItem(id) {
+        const items = await this.readData("inventory.json", "items");
+        const newItems = items.filter((item) => item.id !== id);
+        if (newItems.length !== items.length) {
+          await this.writeData("inventory.json", "items", newItems);
+          return true;
+        }
+        return false;
+      }
+      // Sales methods
+      async getSales() {
+        return this.readData("sales.json", "sales");
+      }
+      async getSale(id) {
+        const sales = await this.readData("sales.json", "sales");
+        return sales.find((sale) => sale.id === id);
+      }
+      async addSale(sale) {
+        const sales = await this.readData("sales.json", "sales");
+        const date = /* @__PURE__ */ new Date();
+        const formattedDate = date.toISOString().split("T")[0].replace(/-/g, "");
+        const settings = await this.getStoreSettings();
+        const today = /* @__PURE__ */ new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const day = String(today.getDate()).padStart(2, "0");
+        const dateFormatted = `${year}${month}${day}`;
+        let todayMaxNumber = 0;
+        for (const existingSale of sales) {
+          if (existingSale.id.startsWith(`TRX-${dateFormatted}`)) {
+            try {
+              const parts = existingSale.id.split("-");
+              if (parts.length === 3) {
+                const number = parseInt(parts[2], 10);
+                if (!isNaN(number) && number > todayMaxNumber) {
+                  todayMaxNumber = number;
+                }
+              }
+            } catch (error) {
+              console.error("Error parsing transaction ID", existingSale.id, error);
+            }
+          }
+        }
+        const nextTransactionNumber = todayMaxNumber + 1;
+        const transactionId = `TRX-${dateFormatted}-${nextTransactionNumber}`;
+        const newSale = {
+          ...sale,
+          // Type cast to avoid TypeScript errors
+          id: transactionId,
+          date: date.toISOString()
+        };
+        sales.push(newSale);
+        await this.writeData("sales.json", "sales", sales);
+        await this.updateProductPopularity(newSale.items);
+        return newSale;
+      }
+      /**
+       * Update a sale record (e.g., for refunds)
+       * 
+       * @param id The ID of the sale to update
+       * @param updates Partial updates to apply to the sale
+       * @returns The updated sale, or null if not found
+       */
+      async updateSale(id, updates) {
+        const sales = await this.readData("sales.json", "sales");
+        const index = sales.findIndex((sale) => sale.id === id);
+        if (index === -1) {
+          return null;
+        }
+        const updatedSale = {
+          ...sales[index],
+          ...updates
+        };
+        sales[index] = updatedSale;
+        await this.writeData("sales.json", "sales", sales);
+        return updatedSale;
+      }
+      /**
+       * Process a refund for a sale
+       * 
+       * @param id The ID of the sale to refund
+       * @param refundedBy Username of the person who processed the refund
+       * @returns The updated sale with refunded status, or null if not found
+       */
+      async refundSale(id, refundedBy) {
+        const sale = await this.getSale(id);
+        if (!sale || sale.status === "Refunded") {
+          return null;
+        }
+        for (const item of sale.items) {
+          const inventoryItem = await this.getInventoryItem(item.productId);
+          if (inventoryItem) {
+            const newStock = inventoryItem.stock + item.quantity;
+            await this.updateInventoryItem(item.productId, {
+              stock: newStock
+            });
+            if (inventoryItem.stock <= inventoryItem.threshold && newStock > inventoryItem.threshold) {
+              const stats2 = await this.getStats();
+              await this.updateStats({
+                lowStockItems: Math.max(0, stats2.lowStockItems - 1)
+                // Ensure we don't go below 0
+              });
+            }
+          }
+        }
+        const saleDate = new Date(sale.date);
+        if (DateUtils.isTodayUTC(saleDate)) {
+          const stats2 = await this.getStats();
+          const currentRefunds = stats2.todayRefunds || 0;
+          const updatedRefunds = currentRefunds + sale.amount;
+          const netSales = stats2.todaySales - updatedRefunds;
+          await this.updateStats({
+            todayRefunds: updatedRefunds,
+            netSales
+          });
+        }
+        const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+        const updatedSale = await this.updateSale(id, {
+          status: "Refunded",
+          refundedBy,
+          refundDate: timestamp
+        });
+        return updatedSale;
+      }
+      // Stats methods
+      async getStats() {
+        try {
+          const filePath = path3.join(this.dataDir, "stats.json");
+          const data = await fs3.readFile(filePath, "utf8");
+          const stats2 = JSON.parse(data);
+          const baseStats = stats2.stats || stats2;
+          const inventory = await this.getInventory();
+          const totalInventoryValue = inventory.reduce((total, item) => {
+            return total + item.price * item.stock;
+          }, 0);
+          const totalInventoryItems = inventory.length;
+          const lowStockItems = inventory.filter((item) => item.stock <= item.threshold).length;
+          const users = await this.readData("users.json", "users");
+          const activeUsers = users.filter((user) => user.status === "Active").length;
+          if (typeof baseStats.todayRefunds === "undefined") {
+            baseStats.todayRefunds = 0;
+          }
+          const netSales = Math.max(0, (baseStats.todaySales || 0) - (baseStats.todayRefunds || 0));
+          return {
+            ...baseStats,
+            totalInventoryValue,
+            totalInventoryItems,
+            lowStockItems,
+            activeUsers,
+            netSales
+          };
+        } catch (error) {
+          console.error("Error reading stats.json:", error);
+          return {
+            totalInventoryItems: 0,
+            todaySales: 0,
+            lowStockItems: 0,
+            activeUsers: 0,
+            totalInventoryValue: 0,
+            todayRefunds: 0,
+            netSales: 0
+          };
+        }
+      }
+      /**
+       * Recalculate today's sales and refunds from actual sales data
+       * This is useful during startup to ensure stats are accurate
+       */
+      async recalculateTodayStats() {
+        try {
+          console.log("Recalculating today's stats from sales data...");
+          const sales = await this.getSales();
+          const todaySales = sales.filter((sale) => DateUtils.isTodayUTC(new Date(sale.date)));
+          const todaySalesTotal = todaySales.filter((sale) => sale.status !== "Refunded").reduce((total, sale) => total + sale.amount, 0);
+          const todayRefundsTotal = todaySales.filter((sale) => sale.status === "Refunded").reduce((total, sale) => total + sale.amount, 0);
+          const netSales = Math.max(0, todaySalesTotal - todayRefundsTotal);
+          await this.updateStats({
+            todaySales: todaySalesTotal,
+            todayRefunds: todayRefundsTotal,
+            netSales
+          });
+          console.log(`Today's stats recalculated - Sales: $${todaySalesTotal.toFixed(2)}, Refunds: $${todayRefundsTotal.toFixed(2)}, Net: $${netSales.toFixed(2)}`);
+        } catch (error) {
+          console.error("Error recalculating today's stats:", error);
+        }
+      }
+      async updateStats(updates) {
+        try {
+          const filePath = path3.join(this.dataDir, "stats.json");
+          const data = await fs3.readFile(filePath, "utf8");
+          const stats2 = JSON.parse(data);
+          const baseStats = stats2.stats || stats2;
+          if (!baseStats.totalInventoryValue) {
+            baseStats.totalInventoryValue = 0;
+          }
+          if (typeof baseStats.todayRefunds === "undefined") {
+            baseStats.todayRefunds = 0;
+          }
+          if (typeof baseStats.netSales === "undefined") {
+            baseStats.netSales = baseStats.todaySales || 0;
+          }
+          const updatedStats = {
+            ...baseStats,
+            ...updates
+          };
+          if ((updates.todaySales || updates.todayRefunds) && !updates.netSales) {
+            updatedStats.netSales = Math.max(0, updatedStats.todaySales - (updatedStats.todayRefunds || 0));
+          }
+          const { totalInventoryValue, totalInventoryItems, lowStockItems, activeUsers, ...persistentFields } = updatedStats;
+          await fs3.writeFile(filePath, JSON.stringify(persistentFields, null, 2), "utf8");
+          return updatedStats;
+        } catch (error) {
+          console.error("Error updating stats.json:", error);
+          return null;
+        }
+      }
+      // Losses Management
+      async getLosses() {
+        try {
+          return await this.readData("losses.json", "losses");
+        } catch (error) {
+          console.error("Error reading losses:", error);
+          return [];
+        }
+      }
+      async getLoss(id) {
+        try {
+          const losses = await this.getLosses();
+          return losses.find((loss) => loss.id === id);
+        } catch (error) {
+          console.error("Error fetching loss:", error);
+          return void 0;
+        }
+      }
+      async addLoss(lossData) {
+        try {
+          const losses = await this.getLosses();
+          const id = `LOSS-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}-${String(losses.length + 1).padStart(3, "0")}`;
+          const newLoss = {
+            ...lossData,
+            // Type cast to avoid TypeScript errors
+            id,
+            date: (/* @__PURE__ */ new Date()).toISOString()
+          };
+          await this.updateInventoryFromLoss(newLoss);
+          losses.push(newLoss);
+          await this.writeData("losses.json", "losses", losses);
+          return newLoss;
+        } catch (error) {
+          throw error;
+        }
+      }
+      async updateInventoryFromLoss(loss) {
+        try {
+          const item = await this.getInventoryItem(loss.inventoryItemId);
+          if (!item) {
+            throw new Error(`Inventory item with ID ${loss.inventoryItemId} not found`);
+          }
+          const newStock = Math.max(0, item.stock - loss.quantity);
+          await this.updateInventoryItem(loss.inventoryItemId, { stock: newStock });
+          const stats2 = await this.getStats();
+          if (newStock <= item.threshold && item.stock > item.threshold) {
+            await this.updateStats({ lowStockItems: stats2.lowStockItems + 1 });
+          }
+        } catch (error) {
+          throw error;
+        }
+      }
+      /**
+       * Update a loss record
+       * 
+       * @param id The ID of the loss record to update
+       * @param updates Partial updates to apply to the loss record
+       * @returns The updated loss record, or null if not found
+       */
+      async updateLoss(id, updates) {
+        try {
+          const losses = await this.getLosses();
+          const index = losses.findIndex((loss) => loss.id === id);
+          if (index === -1) {
+            return null;
+          }
+          const originalLoss = losses[index];
+          const updatedLoss = {
+            ...originalLoss,
+            ...updates
+          };
+          if (updates.quantity !== void 0 && updates.quantity !== originalLoss.quantity) {
+            const inventoryItem = await this.getInventoryItem(originalLoss.inventoryItemId);
+            if (inventoryItem) {
+              const quantityDifference = updates.quantity - originalLoss.quantity;
+              const currentStock = inventoryItem.stock;
+              const newStock = Math.max(0, currentStock - quantityDifference);
+              await this.updateInventoryItem(originalLoss.inventoryItemId, { stock: newStock });
+              const stats2 = await this.getStats();
+              if (currentStock > inventoryItem.threshold && newStock <= inventoryItem.threshold) {
+                await this.updateStats({ lowStockItems: stats2.lowStockItems + 1 });
+              } else if (currentStock <= inventoryItem.threshold && newStock > inventoryItem.threshold) {
+                await this.updateStats({ lowStockItems: Math.max(0, stats2.lowStockItems - 1) });
+              }
+              if (updates.value === void 0) {
+                updatedLoss.value = updates.quantity * inventoryItem.price;
+              }
+            }
+          }
+          losses[index] = updatedLoss;
+          await this.writeData("losses.json", "losses", losses);
+          return updatedLoss;
+        } catch (error) {
+          throw error;
+        }
+      }
+      /**
+       * Get the store settings
+       */
+      async getStoreSettings() {
+        try {
+          const data = await this.readData("settings.json", "settings");
+          if (data && data.length > 0) {
+            return data[0];
+          }
+          return {
+            storeName: "Inventory Pro Store",
+            storeAddress: "123 Main Street, City, State, 12345",
+            storePhone: "(555) 123-4567",
+            thankYouMessage: "Thank you for shopping with us!",
+            nextTransactionId: 1
+          };
+        } catch (error) {
+          throw error;
+        }
+      }
+      /**
+       * Update the store settings
+       */
+      async updateStoreSettings(updates) {
+        try {
+          const currentSettings = await this.getStoreSettings();
+          const updatedSettings = { ...currentSettings, ...updates };
+          await this.writeData("settings.json", "settings", [updatedSettings]);
+          return updatedSettings;
+        } catch (error) {
+          throw error;
+        }
+      }
+      /**
+       * Get the next transaction ID and increment it
+       */
+      async getNextTransactionId() {
+        try {
+          const settings = await this.getStoreSettings();
+          const currentId = settings.nextTransactionId;
+          await this.updateStoreSettings({ nextTransactionId: currentId + 1 });
+          return currentId;
+        } catch (error) {
+          throw error;
+        }
+      }
+      /**
+       * Get product popularity data
+       */
+      async getProductPopularity() {
+        try {
+          const data = await this.readData("popularity.json", "popularity");
+          return data || [];
+        } catch (error) {
+          return [];
+        }
+      }
+      /**
+       * Update product popularity when a sale is completed
+       */
+      async updateProductPopularity(items) {
+        try {
+          const popularityData = await this.getProductPopularity();
+          const currentDate = (/* @__PURE__ */ new Date()).toISOString();
+          for (const item of items) {
+            const productId = item.productId;
+            const existingIndex = popularityData.findIndex((p) => p.productId === productId);
+            if (existingIndex >= 0) {
+              popularityData[existingIndex].salesCount += item.quantity;
+              popularityData[existingIndex].lastUpdated = currentDate;
+            } else {
+              popularityData.push({
+                productId,
+                salesCount: item.quantity,
+                lastUpdated: currentDate
+              });
+            }
+          }
+          popularityData.sort((a, b) => b.salesCount - a.salesCount);
+          await this.writeData("popularity.json", "popularity", popularityData);
+        } catch (error) {
+        }
+      }
+      /**
+       * Get inventory sorted by popularity
+       */
+      async getInventoryByPopularity() {
+        try {
+          const inventory = await this.getInventory();
+          const popularity = await this.getProductPopularity();
+          const popularityMap = /* @__PURE__ */ new Map();
+          popularity.forEach((item) => {
+            popularityMap.set(item.productId, item.salesCount);
+          });
+          return inventory.sort((a, b) => {
+            const aPopularity = popularityMap.get(a.id) || 0;
+            const bPopularity = popularityMap.get(b.id) || 0;
+            if (bPopularity !== aPopularity) {
+              return bPopularity - aPopularity;
+            }
+            return a.name.localeCompare(b.name);
+          });
+        } catch (error) {
+          return this.getInventory();
+        }
+      }
+    };
+    fileStorage = new FileStorage();
+  }
+});
+
 // server/config.ts
 import fs from "fs";
 import path from "path";
@@ -38,783 +1022,12 @@ var config = {
 import express3 from "express";
 
 // server/routes.ts
+init_fileStorage();
+init_logStorage();
+init_logger();
 import express from "express";
 import { createServer } from "http";
 import fs5 from "fs/promises";
-
-// server/fileStorage.ts
-import fs2 from "fs/promises";
-import path2 from "path";
-import { fileURLToPath as fileURLToPath2 } from "url";
-import { dirname } from "path";
-var __filename2 = fileURLToPath2(import.meta.url);
-var __dirname2 = dirname(__filename2);
-var FileStorage = class {
-  dataDir;
-  /**
-   * Initialize the storage system
-   */
-  constructor() {
-    this.dataDir = path2.join(__dirname2, "data");
-    this.initDataDir();
-  }
-  /**
-   * Ensures all necessary data files exist in the data directory
-   * Creates them with default data if they don't exist
-   */
-  async ensureDataFiles() {
-    const files = {
-      "users.json": JSON.stringify({ users: [
-        {
-          id: 1,
-          name: "Admin User",
-          username: "admin",
-          pin: "1234",
-          role: "admin",
-          lastActive: (/* @__PURE__ */ new Date()).toISOString(),
-          status: "active"
-        },
-        {
-          id: 2,
-          name: "Sarah Johnson",
-          username: "sarah",
-          pin: "5678",
-          role: "cashier",
-          lastActive: (/* @__PURE__ */ new Date()).toISOString(),
-          status: "active"
-        }
-      ] }),
-      "inventory.json": JSON.stringify({ items: [] }),
-      "sales.json": JSON.stringify({ sales: [] }),
-      "losses.json": JSON.stringify({ losses: [] }),
-      "stats.json": JSON.stringify({
-        stats: {
-          totalInventoryItems: 0,
-          todaySales: 0,
-          lowStockItems: 0,
-          activeUsers: 2,
-          totalInventoryValue: 0,
-          todayRefunds: 0,
-          netSales: 0
-        }
-      }),
-      "settings.json": JSON.stringify({
-        settings: {
-          storeName: "Inventory Pro Store",
-          storeAddress: "123 Main Street, City, State, 12345",
-          storePhone: "(555) 123-4567",
-          thankYouMessage: "Thank you for shopping with us!",
-          nextTransactionId: 1
-        }
-      }),
-      "popularity.json": JSON.stringify({
-        popularity: []
-      })
-    };
-    for (const [fileName, content] of Object.entries(files)) {
-      const filePath = path2.join(this.dataDir, fileName);
-      try {
-        await fs2.access(filePath);
-      } catch (error) {
-        await fs2.writeFile(filePath, content, "utf8");
-      }
-    }
-  }
-  /**
-   * Initialize the data directory for the application
-   */
-  async initDataDir() {
-    try {
-      await fs2.access(this.dataDir).catch(async () => {
-        await fs2.mkdir(this.dataDir, { recursive: true });
-      });
-      await this.ensureDataFiles();
-    } catch (error) {
-      console.error(`Failed to initialize data directory: ${error}`);
-    }
-  }
-  // Generic function to read data from a JSON file
-  async readData(fileName, key) {
-    try {
-      const filePath = path2.join(this.dataDir, fileName);
-      const data = await fs2.readFile(filePath, "utf8");
-      const parsed = JSON.parse(data);
-      return parsed[key] || [];
-    } catch (error) {
-      console.error(`Error reading ${fileName}:`, error);
-      return [];
-    }
-  }
-  // Generic function to write data to a JSON file
-  async writeData(fileName, key, data) {
-    try {
-      const filePath = path2.join(this.dataDir, fileName);
-      const fileContent = JSON.stringify({ [key]: data }, null, 2);
-      await fs2.writeFile(filePath, fileContent, "utf8");
-      return true;
-    } catch (error) {
-      console.error(`Error writing ${fileName}:`, error);
-      return false;
-    }
-  }
-  // User methods required by IStorage interface
-  async getUsers() {
-    return this.readData("users.json", "users");
-  }
-  async getUser(id) {
-    const users = await this.readData("users.json", "users");
-    return users.find((user) => user.id === id);
-  }
-  async getUserByUsername(username) {
-    const users = await this.readData("users.json", "users");
-    return users.find((user) => user.username === username);
-  }
-  async createUser(insertUser) {
-    const users = await this.readData("users.json", "users");
-    const newId = Math.max(0, ...users.map((user) => user.id)) + 1;
-    const now = /* @__PURE__ */ new Date();
-    const sessionValidUntil = new Date(now);
-    sessionValidUntil.setHours(sessionValidUntil.getHours() + 2);
-    const newUser = {
-      ...insertUser,
-      id: newId,
-      lastActive: now.toISOString(),
-      sessionValidUntil: sessionValidUntil.toISOString(),
-      status: insertUser.status || "Active"
-      // Ensure status is set
-    };
-    users.push(newUser);
-    await this.writeData("users.json", "users", users);
-    return newUser;
-  }
-  async updateUser(id, updates) {
-    const users = await this.readData("users.json", "users");
-    const userIndex = users.findIndex((user) => user.id === id);
-    if (userIndex === -1) {
-      return null;
-    }
-    const updatedUser = {
-      ...users[userIndex],
-      ...updates
-    };
-    users[userIndex] = updatedUser;
-    await this.writeData("users.json", "users", users);
-    return updatedUser;
-  }
-  async deleteUser(id) {
-    try {
-      const users = await this.readData("users.json", "users");
-      const initialLength = users.length;
-      const filteredUsers = users.filter((user) => user.id !== id);
-      if (filteredUsers.length === initialLength) {
-        return false;
-      }
-      await this.writeData("users.json", "users", filteredUsers);
-      return true;
-    } catch (error) {
-      console.error(`Error deleting user with id ${id}:`, error);
-      return false;
-    }
-  }
-  // Additional methods for inventory, sales, and stats
-  // Inventory methods
-  async getInventory() {
-    return this.readData("inventory.json", "items");
-  }
-  async getInventoryItem(id) {
-    const items = await this.readData("inventory.json", "items");
-    return items.find((item) => item.id === id);
-  }
-  async updateInventoryItem(id, updates) {
-    const items = await this.readData("inventory.json", "items");
-    const index = items.findIndex((item) => item.id === id);
-    if (index !== -1) {
-      const updatedItem = { ...items[index], ...updates };
-      if (updates.stock !== void 0 || updates.threshold !== void 0) {
-        updatedItem.status = updatedItem.stock <= updatedItem.threshold ? "Low Stock" : "In Stock";
-      }
-      items[index] = updatedItem;
-      await this.writeData("inventory.json", "items", items);
-      return items[index];
-    }
-    return null;
-  }
-  async addInventoryItem(item) {
-    const items = await this.readData("inventory.json", "items");
-    const newId = Math.max(0, ...items.map((item2) => item2.id)) + 1;
-    const newItem = {
-      ...item,
-      // Type cast to avoid TypeScript errors
-      id: newId,
-      status: item.stock < item.threshold ? "Low Stock" : "In Stock"
-    };
-    items.push(newItem);
-    await this.writeData("inventory.json", "items", items);
-    return newItem;
-  }
-  async deleteInventoryItem(id) {
-    const items = await this.readData("inventory.json", "items");
-    const newItems = items.filter((item) => item.id !== id);
-    if (newItems.length !== items.length) {
-      await this.writeData("inventory.json", "items", newItems);
-      return true;
-    }
-    return false;
-  }
-  // Sales methods
-  async getSales() {
-    return this.readData("sales.json", "sales");
-  }
-  async getSale(id) {
-    const sales = await this.readData("sales.json", "sales");
-    return sales.find((sale) => sale.id === id);
-  }
-  async addSale(sale) {
-    const sales = await this.readData("sales.json", "sales");
-    const date = /* @__PURE__ */ new Date();
-    const formattedDate = date.toISOString().split("T")[0].replace(/-/g, "");
-    const settings = await this.getStoreSettings();
-    const today = /* @__PURE__ */ new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
-    const dateFormatted = `${year}${month}${day}`;
-    let todayMaxNumber = 0;
-    for (const existingSale of sales) {
-      if (existingSale.id.startsWith(`TRX-${dateFormatted}`)) {
-        try {
-          const parts = existingSale.id.split("-");
-          if (parts.length === 3) {
-            const number = parseInt(parts[2], 10);
-            if (!isNaN(number) && number > todayMaxNumber) {
-              todayMaxNumber = number;
-            }
-          }
-        } catch (error) {
-          console.error("Error parsing transaction ID", existingSale.id, error);
-        }
-      }
-    }
-    const nextTransactionNumber = todayMaxNumber + 1;
-    const transactionId = `TRX-${dateFormatted}-${nextTransactionNumber}`;
-    const newSale = {
-      ...sale,
-      // Type cast to avoid TypeScript errors
-      id: transactionId,
-      date: date.toISOString()
-    };
-    sales.push(newSale);
-    await this.writeData("sales.json", "sales", sales);
-    await this.updateProductPopularity(newSale.items);
-    return newSale;
-  }
-  /**
-   * Update a sale record (e.g., for refunds)
-   * 
-   * @param id The ID of the sale to update
-   * @param updates Partial updates to apply to the sale
-   * @returns The updated sale, or null if not found
-   */
-  async updateSale(id, updates) {
-    const sales = await this.readData("sales.json", "sales");
-    const index = sales.findIndex((sale) => sale.id === id);
-    if (index === -1) {
-      return null;
-    }
-    const updatedSale = {
-      ...sales[index],
-      ...updates
-    };
-    sales[index] = updatedSale;
-    await this.writeData("sales.json", "sales", sales);
-    return updatedSale;
-  }
-  /**
-   * Process a refund for a sale
-   * 
-   * @param id The ID of the sale to refund
-   * @param refundedBy Username of the person who processed the refund
-   * @returns The updated sale with refunded status, or null if not found
-   */
-  async refundSale(id, refundedBy) {
-    const sale = await this.getSale(id);
-    if (!sale || sale.status === "Refunded") {
-      return null;
-    }
-    for (const item of sale.items) {
-      const inventoryItem = await this.getInventoryItem(item.productId);
-      if (inventoryItem) {
-        const newStock = inventoryItem.stock + item.quantity;
-        await this.updateInventoryItem(item.productId, {
-          stock: newStock
-        });
-        if (inventoryItem.stock <= inventoryItem.threshold && newStock > inventoryItem.threshold) {
-          const stats = await this.getStats();
-          await this.updateStats({
-            lowStockItems: Math.max(0, stats.lowStockItems - 1)
-            // Ensure we don't go below 0
-          });
-        }
-      }
-    }
-    const saleDate = new Date(sale.date);
-    const today = /* @__PURE__ */ new Date();
-    if (saleDate.getFullYear() === today.getFullYear() && saleDate.getMonth() === today.getMonth() && saleDate.getDate() === today.getDate()) {
-      const stats = await this.getStats();
-      const currentRefunds = stats.todayRefunds || 0;
-      const updatedRefunds = currentRefunds + sale.amount;
-      const netSales = stats.todaySales - updatedRefunds;
-      await this.updateStats({
-        todayRefunds: updatedRefunds,
-        netSales
-      });
-    }
-    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-    const updatedSale = await this.updateSale(id, {
-      status: "Refunded",
-      refundedBy,
-      refundDate: timestamp
-    });
-    return updatedSale;
-  }
-  // Stats methods
-  async getStats() {
-    try {
-      const filePath = path2.join(this.dataDir, "stats.json");
-      const data = await fs2.readFile(filePath, "utf8");
-      const stats = JSON.parse(data);
-      const baseStats = stats.stats || stats;
-      const inventory = await this.getInventory();
-      const totalInventoryValue = inventory.reduce((total, item) => {
-        return total + item.price * item.stock;
-      }, 0);
-      const totalInventoryItems = inventory.length;
-      const lowStockItems = inventory.filter((item) => item.stock <= item.threshold).length;
-      const users = await this.readData("users.json", "users");
-      const activeUsers = users.filter((user) => user.status === "Active").length;
-      if (typeof baseStats.todayRefunds === "undefined") {
-        baseStats.todayRefunds = 0;
-      }
-      const netSales = Math.max(0, (baseStats.todaySales || 0) - (baseStats.todayRefunds || 0));
-      return {
-        ...baseStats,
-        totalInventoryValue,
-        totalInventoryItems,
-        lowStockItems,
-        activeUsers,
-        netSales
-      };
-    } catch (error) {
-      console.error("Error reading stats.json:", error);
-      return {
-        totalInventoryItems: 0,
-        todaySales: 0,
-        lowStockItems: 0,
-        activeUsers: 0,
-        totalInventoryValue: 0,
-        todayRefunds: 0,
-        netSales: 0
-      };
-    }
-  }
-  async updateStats(updates) {
-    try {
-      const filePath = path2.join(this.dataDir, "stats.json");
-      const data = await fs2.readFile(filePath, "utf8");
-      const stats = JSON.parse(data);
-      const baseStats = stats.stats || stats;
-      if (!baseStats.totalInventoryValue) {
-        baseStats.totalInventoryValue = 0;
-      }
-      if (typeof baseStats.todayRefunds === "undefined") {
-        baseStats.todayRefunds = 0;
-      }
-      if (typeof baseStats.netSales === "undefined") {
-        baseStats.netSales = baseStats.todaySales || 0;
-      }
-      const updatedStats = {
-        ...baseStats,
-        ...updates
-      };
-      if ((updates.todaySales || updates.todayRefunds) && !updates.netSales) {
-        updatedStats.netSales = Math.max(0, updatedStats.todaySales - (updatedStats.todayRefunds || 0));
-      }
-      const { totalInventoryValue, totalInventoryItems, lowStockItems, activeUsers, ...persistentFields } = updatedStats;
-      await fs2.writeFile(filePath, JSON.stringify(persistentFields, null, 2), "utf8");
-      return updatedStats;
-    } catch (error) {
-      console.error("Error updating stats.json:", error);
-      return null;
-    }
-  }
-  // Losses Management
-  async getLosses() {
-    try {
-      return await this.readData("losses.json", "losses");
-    } catch (error) {
-      console.error("Error reading losses:", error);
-      return [];
-    }
-  }
-  async getLoss(id) {
-    try {
-      const losses = await this.getLosses();
-      return losses.find((loss) => loss.id === id);
-    } catch (error) {
-      console.error("Error fetching loss:", error);
-      return void 0;
-    }
-  }
-  async addLoss(lossData) {
-    try {
-      const losses = await this.getLosses();
-      const id = `LOSS-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}-${String(losses.length + 1).padStart(3, "0")}`;
-      const newLoss = {
-        ...lossData,
-        // Type cast to avoid TypeScript errors
-        id,
-        date: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      await this.updateInventoryFromLoss(newLoss);
-      losses.push(newLoss);
-      await this.writeData("losses.json", "losses", losses);
-      return newLoss;
-    } catch (error) {
-      throw error;
-    }
-  }
-  async updateInventoryFromLoss(loss) {
-    try {
-      const item = await this.getInventoryItem(loss.inventoryItemId);
-      if (!item) {
-        throw new Error(`Inventory item with ID ${loss.inventoryItemId} not found`);
-      }
-      const newStock = Math.max(0, item.stock - loss.quantity);
-      await this.updateInventoryItem(loss.inventoryItemId, { stock: newStock });
-      const stats = await this.getStats();
-      if (newStock <= item.threshold && item.stock > item.threshold) {
-        await this.updateStats({ lowStockItems: stats.lowStockItems + 1 });
-      }
-    } catch (error) {
-      throw error;
-    }
-  }
-  /**
-   * Update a loss record
-   * 
-   * @param id The ID of the loss record to update
-   * @param updates Partial updates to apply to the loss record
-   * @returns The updated loss record, or null if not found
-   */
-  async updateLoss(id, updates) {
-    try {
-      const losses = await this.getLosses();
-      const index = losses.findIndex((loss) => loss.id === id);
-      if (index === -1) {
-        return null;
-      }
-      const originalLoss = losses[index];
-      const updatedLoss = {
-        ...originalLoss,
-        ...updates
-      };
-      if (updates.quantity !== void 0 && updates.quantity !== originalLoss.quantity) {
-        const inventoryItem = await this.getInventoryItem(originalLoss.inventoryItemId);
-        if (inventoryItem) {
-          const quantityDifference = updates.quantity - originalLoss.quantity;
-          const currentStock = inventoryItem.stock;
-          const newStock = Math.max(0, currentStock - quantityDifference);
-          await this.updateInventoryItem(originalLoss.inventoryItemId, { stock: newStock });
-          const stats = await this.getStats();
-          if (currentStock > inventoryItem.threshold && newStock <= inventoryItem.threshold) {
-            await this.updateStats({ lowStockItems: stats.lowStockItems + 1 });
-          } else if (currentStock <= inventoryItem.threshold && newStock > inventoryItem.threshold) {
-            await this.updateStats({ lowStockItems: Math.max(0, stats.lowStockItems - 1) });
-          }
-          if (updates.value === void 0) {
-            updatedLoss.value = updates.quantity * inventoryItem.price;
-          }
-        }
-      }
-      losses[index] = updatedLoss;
-      await this.writeData("losses.json", "losses", losses);
-      return updatedLoss;
-    } catch (error) {
-      throw error;
-    }
-  }
-  /**
-   * Get the store settings
-   */
-  async getStoreSettings() {
-    try {
-      const data = await this.readData("settings.json", "settings");
-      if (data && data.length > 0) {
-        return data[0];
-      }
-      return {
-        storeName: "Inventory Pro Store",
-        storeAddress: "123 Main Street, City, State, 12345",
-        storePhone: "(555) 123-4567",
-        thankYouMessage: "Thank you for shopping with us!",
-        nextTransactionId: 1
-      };
-    } catch (error) {
-      throw error;
-    }
-  }
-  /**
-   * Update the store settings
-   */
-  async updateStoreSettings(updates) {
-    try {
-      const currentSettings = await this.getStoreSettings();
-      const updatedSettings = { ...currentSettings, ...updates };
-      await this.writeData("settings.json", "settings", [updatedSettings]);
-      return updatedSettings;
-    } catch (error) {
-      throw error;
-    }
-  }
-  /**
-   * Get the next transaction ID and increment it
-   */
-  async getNextTransactionId() {
-    try {
-      const settings = await this.getStoreSettings();
-      const currentId = settings.nextTransactionId;
-      await this.updateStoreSettings({ nextTransactionId: currentId + 1 });
-      return currentId;
-    } catch (error) {
-      throw error;
-    }
-  }
-  /**
-   * Get product popularity data
-   */
-  async getProductPopularity() {
-    try {
-      const data = await this.readData("popularity.json", "popularity");
-      return data || [];
-    } catch (error) {
-      return [];
-    }
-  }
-  /**
-   * Update product popularity when a sale is completed
-   */
-  async updateProductPopularity(items) {
-    try {
-      const popularityData = await this.getProductPopularity();
-      const currentDate = (/* @__PURE__ */ new Date()).toISOString();
-      for (const item of items) {
-        const productId = item.productId;
-        const existingIndex = popularityData.findIndex((p) => p.productId === productId);
-        if (existingIndex >= 0) {
-          popularityData[existingIndex].salesCount += item.quantity;
-          popularityData[existingIndex].lastUpdated = currentDate;
-        } else {
-          popularityData.push({
-            productId,
-            salesCount: item.quantity,
-            lastUpdated: currentDate
-          });
-        }
-      }
-      popularityData.sort((a, b) => b.salesCount - a.salesCount);
-      await this.writeData("popularity.json", "popularity", popularityData);
-    } catch (error) {
-    }
-  }
-  /**
-   * Get inventory sorted by popularity
-   */
-  async getInventoryByPopularity() {
-    try {
-      const inventory = await this.getInventory();
-      const popularity = await this.getProductPopularity();
-      const popularityMap = /* @__PURE__ */ new Map();
-      popularity.forEach((item) => {
-        popularityMap.set(item.productId, item.salesCount);
-      });
-      return inventory.sort((a, b) => {
-        const aPopularity = popularityMap.get(a.id) || 0;
-        const bPopularity = popularityMap.get(b.id) || 0;
-        if (bPopularity !== aPopularity) {
-          return bPopularity - aPopularity;
-        }
-        return a.name.localeCompare(b.name);
-      });
-    } catch (error) {
-      return this.getInventory();
-    }
-  }
-};
-var fileStorage = new FileStorage();
-
-// server/logStorage.ts
-import fs3 from "fs";
-import path3 from "path";
-var FileLogStorage = class {
-  logsCache = /* @__PURE__ */ new Map();
-  nextId = 1;
-  constructor() {
-    this.loadLogsFromFile();
-  }
-  async loadLogsFromFile() {
-    try {
-      const logsDir = path3.join(process.cwd(), "server", "data");
-      const logsFile = path3.join(logsDir, "activity_logs.json");
-      if (!fs3.existsSync(logsFile)) {
-        if (!fs3.existsSync(logsDir)) {
-          fs3.mkdirSync(logsDir, { recursive: true });
-        }
-        fs3.writeFileSync(logsFile, JSON.stringify({ logs: [] }));
-        return;
-      }
-      const data = JSON.parse(fs3.readFileSync(logsFile, "utf-8"));
-      if (data.logs && Array.isArray(data.logs)) {
-        data.logs.forEach((log2) => {
-          this.logsCache.set(log2.id, {
-            ...log2,
-            timestamp: new Date(log2.timestamp)
-          });
-          if (log2.id >= this.nextId) {
-            this.nextId = log2.id + 1;
-          }
-        });
-      }
-    } catch (error) {
-      this.logsCache.clear();
-      this.nextId = 1;
-    }
-  }
-  async saveLogsToFile() {
-    try {
-      const logsDir = path3.join(process.cwd(), "server", "data");
-      const logsFile = path3.join(logsDir, "activity_logs.json");
-      if (!fs3.existsSync(logsDir)) {
-        fs3.mkdirSync(logsDir, { recursive: true });
-      }
-      const logs = Array.from(this.logsCache.values());
-      fs3.writeFileSync(logsFile, JSON.stringify({ logs }, null, 2));
-    } catch (error) {
-      console.error("Error saving logs to file:", error);
-    }
-  }
-  async createLog(log2) {
-    const newLog = {
-      id: this.nextId++,
-      userId: log2.userId,
-      username: log2.username,
-      action: log2.action,
-      category: log2.category,
-      details: log2.details || "",
-      timestamp: /* @__PURE__ */ new Date()
-    };
-    this.logsCache.set(newLog.id, newLog);
-    await this.saveLogsToFile();
-    return newLog;
-  }
-  async getLogs() {
-    return Array.from(this.logsCache.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }
-  async getLogsByCategory(category) {
-    return Array.from(this.logsCache.values()).filter((log2) => log2.category === category).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }
-  async getLogsByUser(userId) {
-    return Array.from(this.logsCache.values()).filter((log2) => log2.userId === userId).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }
-  async getLogById(id) {
-    return this.logsCache.get(id);
-  }
-};
-var logStorage = new FileLogStorage();
-
-// server/logger.ts
-var LOG_CATEGORIES = {
-  USER: "user",
-  INVENTORY: "inventory",
-  SALES: "sales",
-  LOSSES: "losses",
-  SETTINGS: "settings",
-  AUTHENTICATION: "authentication",
-  SYSTEM: "system"
-};
-var LOG_ACTIONS = {
-  USER: {
-    CREATE: "User Created",
-    UPDATE: "User Updated",
-    DELETE: "User Deleted",
-    STATUS_CHANGE: "User Status Changed"
-  },
-  INVENTORY: {
-    CREATE: "Inventory Item Created",
-    UPDATE: "Inventory Item Updated",
-    DELETE: "Inventory Item Deleted",
-    BULK_IMPORT: "Bulk Inventory Import"
-  },
-  SALES: {
-    CREATE: "Sale Recorded",
-    REPRINT: "Receipt Reprinted",
-    REFUND: "Sale Refunded"
-  },
-  LOSSES: {
-    CREATE: "Loss Recorded",
-    UPDATE: "Loss Updated"
-  },
-  SETTINGS: {
-    UPDATE: "Settings Updated"
-  },
-  AUTHENTICATION: {
-    LOGIN: "User Login",
-    LOGOUT: "User Logout",
-    FAILED_LOGIN: "Failed Login Attempt"
-  },
-  SYSTEM: {
-    ERROR: "System Error",
-    STARTUP: "System Startup"
-  }
-};
-var ActivityLogger = class {
-  // Log any activity
-  static async log(userId, username, category, action, details) {
-    try {
-      const logEntry = {
-        userId,
-        username,
-        category,
-        action,
-        details: details || ""
-      };
-      await logStorage.createLog(logEntry);
-    } catch (error) {
-      console.error("Failed to log activity:", error);
-    }
-  }
-  // Helper methods for common log types
-  static async logUserActivity(userId, username, action, details) {
-    return this.log(userId, username, LOG_CATEGORIES.USER, action, details);
-  }
-  static async logInventoryActivity(userId, username, action, details) {
-    return this.log(userId, username, LOG_CATEGORIES.INVENTORY, action, details);
-  }
-  static async logSalesActivity(userId, username, action, details) {
-    return this.log(userId, username, LOG_CATEGORIES.SALES, action, details);
-  }
-  static async logLossActivity(userId, username, action, details) {
-    return this.log(userId, username, LOG_CATEGORIES.LOSSES, action, details);
-  }
-  static async logSettingsActivity(userId, username, action, details) {
-    return this.log(userId, username, LOG_CATEGORIES.SETTINGS, action, details);
-  }
-  static async logAuthActivity(userId, username, action, details) {
-    return this.log(userId, username, LOG_CATEGORIES.AUTHENTICATION, action, details);
-  }
-  static async logSystemActivity(action, details) {
-    return this.log(0, "SYSTEM", LOG_CATEGORIES.SYSTEM, action, details);
-  }
-};
 
 // server/productLookup.ts
 var ProductCache = class {
@@ -865,11 +1078,11 @@ function detectRegion(barcode) {
   const prefix = barcode.substring(0, 3);
   const numPrefix = parseInt(prefix);
   if (numPrefix >= 0 && numPrefix <= 19) return "US_CANADA";
-  if (numPrefix >= 16 && numPrefix <= 29) return "RESTRICTED";
-  if (numPrefix >= 24 && numPrefix <= 39) return "US_DRUGS";
-  if (numPrefix >= 32 && numPrefix <= 49) return "RESTRICTED";
-  if (numPrefix >= 40 && numPrefix <= 59) return "COUPONS";
-  if (numPrefix >= 48 && numPrefix <= 99) return "US_CANADA";
+  if (numPrefix >= 20 && numPrefix <= 29) return "RESTRICTED";
+  if (numPrefix >= 30 && numPrefix <= 39) return "US_DRUGS";
+  if (numPrefix >= 40 && numPrefix <= 49) return "RESTRICTED";
+  if (numPrefix >= 50 && numPrefix <= 59) return "COUPONS";
+  if (numPrefix >= 60 && numPrefix <= 99) return "US_CANADA";
   if (numPrefix >= 100 && numPrefix <= 139) return "US_CANADA";
   if (numPrefix >= 200 && numPrefix <= 299) return "RESTRICTED";
   if (numPrefix >= 300 && numPrefix <= 379) return "FRANCE";
@@ -1515,6 +1728,7 @@ async function processCsvFile(filePath) {
 }
 
 // server/routes.ts
+init_dailyStatsReset();
 var __filename4 = fileURLToPath4(import.meta.url);
 var __dirname4 = dirname3(__filename4);
 var resetCsvTemplate = async () => {
@@ -1623,8 +1837,8 @@ async function registerRoutes(app2) {
   }, express.static(path5.join(__dirname4, "uploads")));
   app2.get("/api/stats", async (req, res) => {
     try {
-      const stats = await fileStorage.getStats();
-      res.json(stats);
+      const stats2 = await fileStorage.getStats();
+      res.json(stats2);
     } catch (error) {
       console.error("Error fetching stats:", error);
       res.status(500).json({ error: "Failed to fetch dashboard statistics" });
@@ -1740,14 +1954,14 @@ async function registerRoutes(app2) {
         const oldStatus = originalItem.stock <= originalItem.threshold;
         const newStatus = updatedItem.stock <= updatedItem.threshold;
         if (oldStatus !== newStatus) {
-          const stats = await fileStorage.getStats();
+          const stats2 = await fileStorage.getStats();
           if (oldStatus && !newStatus) {
             await fileStorage.updateStats({
-              lowStockItems: Math.max(0, stats.lowStockItems - 1)
+              lowStockItems: Math.max(0, stats2.lowStockItems - 1)
             });
           } else if (!oldStatus && newStatus) {
             await fileStorage.updateStats({
-              lowStockItems: stats.lowStockItems + 1
+              lowStockItems: stats2.lowStockItems + 1
             });
           }
         }
@@ -2071,10 +2285,13 @@ async function registerRoutes(app2) {
         return res.status(400).json({ error: "Missing required fields" });
       }
       const newSale = await fileStorage.addSale(req.body);
-      const stats = await fileStorage.getStats();
-      await fileStorage.updateStats({
-        todaySales: stats.todaySales + req.body.amount
-      });
+      const saleDate = new Date(newSale.date);
+      if (DateUtils.isTodayUTC(saleDate)) {
+        const stats2 = await fileStorage.getStats();
+        await fileStorage.updateStats({
+          todaySales: stats2.todaySales + req.body.amount
+        });
+      }
       for (const item of req.body.items) {
         const inventoryItem = await fileStorage.getInventoryItem(item.productId);
         if (inventoryItem) {
@@ -2275,9 +2492,9 @@ async function registerRoutes(app2) {
           stock: newStock
         });
         if (inventoryItem.stock > inventoryItem.threshold && newStock <= inventoryItem.threshold) {
-          const stats = await fileStorage.getStats();
+          const stats2 = await fileStorage.getStats();
           await fileStorage.updateStats({
-            lowStockItems: stats.lowStockItems + 1
+            lowStockItems: stats2.lowStockItems + 1
           });
         }
       }
@@ -2455,6 +2672,22 @@ async function registerRoutes(app2) {
     } catch (error) {
       console.error("Error resetting CSV template:", error);
       res.status(500).json({ error: "Failed to reset CSV template" });
+    }
+  });
+  app2.post("/api/admin/reset-daily-stats", isAdmin, async (req, res) => {
+    try {
+      const currentUser = getCurrentUser(req);
+      await dailyStatsResetManager.manualReset();
+      await ActivityLogger.logInventoryActivity(
+        currentUser.id,
+        currentUser.username,
+        LOG_ACTIONS.INVENTORY.UPDATE,
+        "Manual daily stats reset triggered by administrator"
+      );
+      res.json({ message: "Daily stats reset completed successfully" });
+    } catch (error) {
+      console.error("Error resetting daily stats:", error);
+      res.status(500).json({ error: "Failed to reset daily stats" });
     }
   });
   app2.post("/api/login", async (req, res) => {
@@ -2712,6 +2945,7 @@ async function initializeAppStorage() {
 }
 
 // server/index.ts
+init_dailyStatsReset();
 import helmet from "helmet";
 var app = express3();
 app.use(helmet({
@@ -2767,6 +3001,7 @@ app.use((req, res, next) => {
 (async () => {
   try {
     await initializeAppStorage();
+    await dailyStatsResetManager.start();
     const server = await registerRoutes(app);
     app.use((err, _req, res, _next) => {
       const status = err.status || err.statusCode || 500;
@@ -2790,6 +3025,7 @@ app.use((req, res, next) => {
     });
     const shutdown = () => {
       log("Shutting down server gracefully...", "server");
+      dailyStatsResetManager.stop();
       server.close(() => {
         log("Server shutdown complete", "server");
         process.exit(0);

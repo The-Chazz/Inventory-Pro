@@ -16,13 +16,12 @@ const InvisibleBarcodeScanner: React.FC<InvisibleBarcodeScannerProps> = ({
     activeRef.current = isActive;
   }, [isActive]);
 
-  // Set up keyboard listener for barcode scanners
+  // Set up keyboard listener for barcode scanners with improved reliability
   useEffect(() => {
     if (!isActive) return;
 
     let barcodeBuffer = '';
     let lastKeyTime = 0;
-    const SCANNER_TIMEOUT = 50;
 
     const keyListener = (e: KeyboardEvent) => {
       // Only process when active
@@ -44,11 +43,8 @@ const InvisibleBarcodeScanner: React.FC<InvisibleBarcodeScannerProps> = ({
       
       const currentTime = new Date().getTime();
       
-      // Debug logging
-      console.log(`Invisible Scanner - Key pressed: ${e.key}, Buffer: ${barcodeBuffer}, Active: ${activeRef.current}`);
-      
       // If there's a long delay between keypresses, start a new barcode
-      if (currentTime - lastKeyTime > 1000) {
+      if (currentTime - lastKeyTime > 500) { // Reduced timeout for better reliability
         barcodeBuffer = '';
       }
       
@@ -56,8 +52,7 @@ const InvisibleBarcodeScanner: React.FC<InvisibleBarcodeScannerProps> = ({
       lastKeyTime = currentTime;
       
       // Handle Enter key as completion of barcode
-      if (e.key === 'Enter' && barcodeBuffer.length > 0) {
-        console.log(`Invisible Scanner - Processing barcode with Enter: ${barcodeBuffer}`);
+      if (e.key === 'Enter' && barcodeBuffer.length >= 4) {
         onScan(barcodeBuffer);
         barcodeBuffer = '';
         e.preventDefault();
@@ -66,38 +61,25 @@ const InvisibleBarcodeScanner: React.FC<InvisibleBarcodeScannerProps> = ({
       // Handle all other keys that might be part of a barcode
       else if (/^[a-zA-Z0-9\-]$/.test(e.key)) {
         barcodeBuffer += e.key;
-        console.log(`Invisible Scanner - Building barcode: ${barcodeBuffer}`);
         
         // Prevent the key from being typed elsewhere
         e.preventDefault();
         e.stopPropagation();
         
-        // Process immediately if we have a complete barcode (12-13 digits for UPC/EAN)
-        if (barcodeBuffer.length >= 12) {
-          console.log(`Invisible Scanner - Auto-processing complete barcode: ${barcodeBuffer}`);
-          // Pass to manual scanner for processing
+        // Process immediately if we have a complete barcode (12-14 digits for common formats)
+        if (barcodeBuffer.length >= 8 && (barcodeBuffer.length === 12 || barcodeBuffer.length === 13 || barcodeBuffer.length === 14)) {
           onScan(barcodeBuffer);
           barcodeBuffer = '';
-        } else {
-          // Auto-process after delay for shorter barcodes
-          setTimeout(() => {
-            if (barcodeBuffer.length >= 6) {
-              console.log(`Invisible Scanner - Auto-processing barcode after delay: ${barcodeBuffer}`);
-              // Pass to manual scanner for processing
-              onScan(barcodeBuffer);
-              barcodeBuffer = '';
-            }
-          }, 150);
         }
       }
     };
     
     // Add the listener
-    document.addEventListener('keydown', keyListener);
+    document.addEventListener('keydown', keyListener, true);
     
     // Cleanup function
     return () => {
-      document.removeEventListener('keydown', keyListener);
+      document.removeEventListener('keydown', keyListener, true);
     };
   }, [isActive, onScan]);
 

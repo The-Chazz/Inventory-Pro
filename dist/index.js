@@ -1431,8 +1431,6 @@ async function searchOpenFoodFacts(barcode) {
     const region = detectRegion(barcode);
     const languages = getRegionLanguages(region);
     const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`, {
-      timeout: 1e4,
-      // 10 second timeout
       headers: {
         "User-Agent": "Inventory-Pro/1.0.0 (Product Lookup Service)"
       }
@@ -1511,7 +1509,6 @@ async function searchUPCDatabase(barcode) {
     const baseUrl = apiKey ? "https://api.upcitemdb.com/prod/trial/lookup" : "https://api.upcitemdb.com/prod/trial/lookup";
     const url = `${baseUrl}?upc=${barcode}`;
     const response = await fetch(url, {
-      timeout: 1e4,
       headers: {
         "User-Agent": "Inventory-Pro/1.0.0 (Product Lookup Service)",
         ...apiKey && { "user_key": apiKey }

@@ -515,7 +515,6 @@ async function searchOpenFoodFacts(barcode: string): Promise<ProductInfo> {
     const languages = getRegionLanguages(region);
     
     const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`, {
-      timeout: 10000, // 10 second timeout
       headers: {
         'User-Agent': 'Inventory-Pro/1.0.0 (Product Lookup Service)'
       }
@@ -644,7 +643,6 @@ async function searchUPCDatabase(barcode: string): Promise<ProductInfo> {
     const url = `${baseUrl}?upc=${barcode}`;
     
     const response = await fetch(url, {
-      timeout: 10000,
       headers: {
         'User-Agent': 'Inventory-Pro/1.0.0 (Product Lookup Service)',
         ...(apiKey && { 'user_key': apiKey })
@@ -811,9 +809,7 @@ export async function testAPIAvailability(): Promise<Record<string, boolean>> {
   
   // Test Open Food Facts with a known barcode (Coca Cola)
   try {
-    const response = await fetch('https://world.openfoodfacts.org/api/v0/product/5449000000996.json', {
-      timeout: 5000
-    });
+    const response = await fetch('https://world.openfoodfacts.org/api/v0/product/5449000000996.json');
     testResults['openFoodFacts'] = response.ok;
   } catch {
     testResults['openFoodFacts'] = false;
@@ -821,9 +817,7 @@ export async function testAPIAvailability(): Promise<Record<string, boolean>> {
   
   // Test UPC Database with a simple ping (avoiding rate limits)
   try {
-    const response = await fetch('https://api.upcitemdb.com/prod/trial/lookup?upc=test', {
-      timeout: 5000
-    });
+    const response = await fetch('https://api.upcitemdb.com/prod/trial/lookup?upc=test');
     // Even an error response means the API is reachable
     testResults['upcDatabase'] = true;
   } catch {

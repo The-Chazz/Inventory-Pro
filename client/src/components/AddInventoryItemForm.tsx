@@ -52,11 +52,6 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
   // Auto-activate scanner when form opens
   useEffect(() => {
     setScannerActive(true);
-    toast({
-      title: "Scanner Auto-Activated",
-      description: "Barcode scanner ready for product lookup",
-      duration: 2000,
-    });
 
     // Cleanup scanner on unmount
     return () => {
@@ -206,6 +201,11 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
     "Canned Goods",
     "Cleaning Supplies",
     "Personal Care",
+    "Hair Care",
+    "Toiletries",
+    "Cooking Supplies",
+    "Medicine",
+    "Alcohol",
     "Other"
   ];
 

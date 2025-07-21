@@ -51,11 +51,6 @@ const PointOfSale: React.FC = () => {
   useEffect(() => {
     // Auto-activate scanner when component mounts
     setIsScanning(true);
-    toast({
-      title: "Scanner Auto-Activated",
-      description: "Barcode scanner activated automatically. Will stay active for 30 minutes.",
-      duration: 3000,
-    });
 
     // Cleanup on unmount
     return () => {
@@ -352,7 +347,7 @@ const PointOfSale: React.FC = () => {
           unit: item.unit,
           subtotal: item.subtotal
         })),
-        cashier: currentUser.name, // Use the current user's name from state
+        cashier: currentUser.username, // Use the current user's username from state
         amount: cartTotal,
         status: "Completed"
       };

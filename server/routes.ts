@@ -20,6 +20,7 @@ import {
   getImageUrl, 
   deleteImage 
 } from "./fileUpload";
+import { DateUtils, dailyStatsResetManager } from "./dailyStatsReset";
 
 // Get the directory name properly in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -842,11 +843,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const newSale = await fileStorage.addSale(req.body);
       
-      // Update sales in stats
-      const stats = await fileStorage.getStats();
-      await fileStorage.updateStats({ 
-        todaySales: stats.todaySales + req.body.amount 
-      });
+      // Only update today's sales if the sale is for today (in UTC)
+      const saleDate = new Date(newSale.date);
+      if (DateUtils.isTodayUTC(saleDate)) {
+        const stats = await fileStorage.getStats();
+        await fileStorage.updateStats({ 
+          todaySales: stats.todaySales + req.body.amount 
+        });
+      }
       
       // Update inventory stock levels
       for (const item of req.body.items) {
@@ -1360,6 +1364,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error resetting CSV template:", error);
       res.status(500).json({ error: "Failed to reset CSV template" });
+    }
+  });
+
+  /**
+   * Admin endpoint to manually trigger daily stats reset
+   */
+  app.post("/api/admin/reset-daily-stats", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const currentUser = getCurrentUser(req);
+      
+      // Trigger manual daily stats reset
+      await dailyStatsResetManager.manualReset();
+      
+      // Log the manual reset activity
+      await ActivityLogger.logInventoryActivity(
+        currentUser.id,
+        currentUser.username,
+        LOG_ACTIONS.INVENTORY.UPDATE,
+        "Manual daily stats reset triggered by administrator"
+      );
+      
+      res.json({ message: "Daily stats reset completed successfully" });
+    } catch (error) {
+      console.error("Error resetting daily stats:", error);
+      res.status(500).json({ error: "Failed to reset daily stats" });
     }
   });
 

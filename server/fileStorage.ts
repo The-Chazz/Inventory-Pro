@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { IStorage } from './storage';
 import { User, InsertUser } from '../shared/schema';
+import { DateUtils } from './dailyStatsReset';
 
 // Get the directory name properly in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -481,15 +482,10 @@ export class FileStorage implements IStorage {
       }
     }
     
-    // Update sales statistics for today's refunds
+    // Update sales statistics for today's refunds - only if the sale was made today
     const saleDate = new Date(sale.date);
-    const today = new Date();
     
-    if (
-      saleDate.getFullYear() === today.getFullYear() &&
-      saleDate.getMonth() === today.getMonth() &&
-      saleDate.getDate() === today.getDate()
-    ) {
+    if (DateUtils.isTodayUTC(saleDate)) {
       const stats = await this.getStats();
       const currentRefunds = stats.todayRefunds || 0;
       const updatedRefunds = currentRefunds + sale.amount;
@@ -567,6 +563,47 @@ export class FileStorage implements IStorage {
         todayRefunds: 0,
         netSales: 0
       };
+    }
+  }
+
+  /**
+   * Recalculate today's sales and refunds from actual sales data
+   * This is useful during startup to ensure stats are accurate
+   */
+  async recalculateTodayStats(): Promise<void> {
+    try {
+      console.log('Recalculating today\'s stats from sales data...');
+      
+      // Get all sales
+      const sales = await this.getSales();
+      
+      // Filter sales for today (UTC)
+      const todaySales = sales.filter(sale => DateUtils.isTodayUTC(new Date(sale.date)));
+      
+      // Calculate today's sales total (excluding refunded sales)
+      const todaySalesTotal = todaySales
+        .filter(sale => sale.status !== 'Refunded')
+        .reduce((total, sale) => total + sale.amount, 0);
+      
+      // Calculate today's refunds total
+      const todayRefundsTotal = todaySales
+        .filter(sale => sale.status === 'Refunded')
+        .reduce((total, sale) => total + sale.amount, 0);
+      
+      // Calculate net sales
+      const netSales = Math.max(0, todaySalesTotal - todayRefundsTotal);
+      
+      // Update stats with recalculated values
+      await this.updateStats({
+        todaySales: todaySalesTotal,
+        todayRefunds: todayRefundsTotal,
+        netSales: netSales
+      });
+      
+      console.log(`Today's stats recalculated - Sales: $${todaySalesTotal.toFixed(2)}, Refunds: $${todayRefundsTotal.toFixed(2)}, Net: $${netSales.toFixed(2)}`);
+      
+    } catch (error) {
+      console.error('Error recalculating today\'s stats:', error);
     }
   }
 

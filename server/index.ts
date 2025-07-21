@@ -10,6 +10,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeAppStorage } from "./init";
 import { config } from "./config";
+import { dailyStatsResetManager } from "./dailyStatsReset";
 import helmet from "helmet";
 
 const app = express();
@@ -86,6 +87,9 @@ app.use((req, res, next) => {
     // Initialize file storage system
     await initializeAppStorage();
     
+    // Start the daily stats reset scheduler
+    await dailyStatsResetManager.start();
+    
     // Register API routes
     const server = await registerRoutes(app);
 
@@ -128,6 +132,10 @@ app.use((req, res, next) => {
     // Handle graceful shutdown
     const shutdown = () => {
       log('Shutting down server gracefully...', 'server');
+      
+      // Stop the daily stats reset scheduler
+      dailyStatsResetManager.stop();
+      
       server.close(() => {
         log('Server shutdown complete', 'server');
         process.exit(0);

@@ -101,14 +101,14 @@ const RecentSales: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${sale.amount.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        sale.status.toLowerCase() === 'completed' 
+                        (sale.status || '').toLowerCase() === 'completed' 
                           ? 'bg-green-100 text-green-800' 
-                          : sale.status.toLowerCase() === 'refunded'
+                          : (sale.status || '').toLowerCase() === 'refunded'
                             ? 'bg-red-100 text-red-800'
                             : 'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {sale.status}
-                        {sale.status.toLowerCase() === 'refunded' && sale.refundedBy && (
+                        {sale.status || 'Unknown'}
+                        {(sale.status || '').toLowerCase() === 'refunded' && sale.refundedBy && (
                           <span className="text-xs ml-1 text-gray-500"> (by {sale.refundedBy})</span>
                         )}
                       </span>

@@ -6,9 +6,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import BarcodeScanner from "./BarcodeScanner";
-import ScanStatusIndicator from "./ScanStatusIndicator";
 import ImageUploader from "./ImageUploader";
-import { ScanQueue, QueuedScan } from "@/utils/scanQueue";
 
 // Define schema for inventory item validation
 const inventoryItemSchema = z.object({
@@ -49,16 +47,6 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
   const [scannerActive, setScannerActive] = useState(false);
   const [uploadedImage, setUploadedImage] = useState<string>("");
   const [isLookingUp, setIsLookingUp] = useState(false);
-  
-  // Initialize scan queue for inventory forms
-  const [scanQueue] = useState(() => new ScanQueue({
-    maxQueueSize: 5, // Smaller queue for inventory forms
-    processingDelay: 250, // Slightly slower for product lookups
-    maxRetries: 2,
-    duplicateWindow: 2000 // Longer window to prevent accidental re-scans
-  }));
-  const [queueStatus, setQueueStatus] = useState<QueuedScan[]>([]);
-  
   const { toast } = useToast();
 
   // Auto-activate scanner when form opens
@@ -88,7 +76,7 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
     }
   });
   
-  // Handle barcode scan result with enhanced error handling
+  // Handle barcode scan result
   const handleBarcodeScan = async (result: string) => {
     form.setValue("barcode", result);
     form.setValue("sku", result); // Also set the SKU to be the same as barcode
@@ -146,21 +134,6 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
     } finally {
       setIsLookingUp(false);
     }
-  };
-  
-  // Handle scan queue updates
-  const handleQueueUpdate = (queue: QueuedScan[]) => {
-    setQueueStatus(queue);
-  };
-
-  // Handle scan errors from the scanner
-  const handleScanError = (error: Error) => {
-    toast({
-      title: "Scanner Error",
-      description: error.message,
-      variant: "destructive",
-      duration: 2000,
-    });
   };
   
   // Handle image upload
@@ -264,7 +237,7 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
             <label className="block text-sm font-medium text-gray-700">
-              Scan Barcode
+              Scan Barcode {scannerActive && <span className="text-green-600 text-xs">(Active)</span>}
             </label>
             <button
               type="button"
@@ -278,26 +251,13 @@ const AddInventoryItemForm: React.FC<AddInventoryItemFormProps> = ({
               {scannerActive ? 'Disable Scanner' : 'Enable Scanner'}
             </button>
           </div>
-          
-          {/* Scan status indicator */}
-          {scannerActive && (
-            <div className="mb-3">
-              <ScanStatusIndicator 
-                queue={queueStatus}
-                showDetails={true}
-              />
-            </div>
-          )}
-          
           {scannerActive && (
             <div className="mb-4">
               <BarcodeScanner 
                 onScan={handleBarcodeScan}
                 isActive={scannerActive}
-                onError={handleScanError}
+                onError={(error) => console.error('Barcode scan error:', error)}
                 onClose={() => setScannerActive(false)}
-                scanQueue={scanQueue}
-                onQueueUpdate={handleQueueUpdate}
               />
             </div>
           )}

@@ -99,12 +99,12 @@ class ProductCache {
   }
 }
 
-// Enhanced rate limiter with per-API limits - optimized for better performance
+// Enhanced rate limiter with per-API limits
 class RateLimiter {
   private lastCalls = new Map<string, number>();
-  private readonly defaultMinInterval = 50; // Reduced from 100ms to 50ms for better performance
+  private readonly defaultMinInterval = 100; // 100ms general rate limit
   private readonly upcDatabaseInterval = 1000; // 1 second for UPC Database free tier
-  private readonly openFoodFactsInterval = 100; // Reduced from 200ms to 100ms for Open Food Facts
+  private readonly openFoodFactsInterval = 200; // 200ms for Open Food Facts to be respectful
 
   async throttle(apiName: string = 'default'): Promise<void> {
     const now = Date.now();

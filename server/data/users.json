@@ -6,9 +6,9 @@
       "username": "admin",
       "pin": "1234",
       "role": "admin",
-      "lastActive": "2025-07-22T00:36:45.936Z",
+      "lastActive": "2025-01-01T00:00:00.000Z",
       "status": "active",
-      "sessionValidUntil": "2025-07-22T02:36:45.936Z"
+      "sessionValidUntil": "2025-01-01T02:00:00.000Z"
     }
   ]
 }

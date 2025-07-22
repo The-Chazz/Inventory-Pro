@@ -815,42 +815,6 @@
       "category": "authentication",
       "details": "User logged in successfully",
       "timestamp": "2025-07-21T03:45:25.813Z"
-    },
-    {
-      "id": 92,
-      "userId": 1,
-      "username": "admin",
-      "action": "User Login",
-      "category": "authentication",
-      "details": "User logged in successfully",
-      "timestamp": "2025-07-22T00:34:32.247Z"
-    },
-    {
-      "id": 93,
-      "userId": 1,
-      "username": "admin",
-      "action": "User Login",
-      "category": "authentication",
-      "details": "User logged in successfully",
-      "timestamp": "2025-07-22T00:35:16.476Z"
-    },
-    {
-      "id": 94,
-      "userId": 1,
-      "username": "admin",
-      "action": "User Login",
-      "category": "authentication",
-      "details": "User logged in successfully",
-      "timestamp": "2025-07-22T00:35:58.804Z"
-    },
-    {
-      "id": 95,
-      "userId": 1,
-      "username": "admin",
-      "action": "User Login",
-      "category": "authentication",
-      "details": "User logged in successfully",
-      "timestamp": "2025-07-22T00:36:45.936Z"
     }
   ]
 }

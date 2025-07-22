@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { BarcodeFormat } from '@zxing/library';
+import { ScanQueue, QueuedScan } from '@/utils/scanQueue';
 
 interface BarcodeScannerProps {
   onScan: (result: string) => void;
@@ -7,21 +8,58 @@ interface BarcodeScannerProps {
   onClose?: () => void;
   isActive: boolean;
   formats?: BarcodeFormat[];
+  scanQueue?: ScanQueue;
+  onQueueUpdate?: (queue: QueuedScan[]) => void;
 }
 
 const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ 
   onScan, 
   onError, 
   isActive, 
-  formats
+  formats,
+  scanQueue,
+  onQueueUpdate
 }) => {
   const activeRef = useRef<boolean>(isActive);
+  const currentScanQueue = useRef<ScanQueue>(scanQueue || new ScanQueue());
 
   useEffect(() => {
     activeRef.current = isActive;
   }, [isActive]);
 
-  // Simplified barcode scanner - keyboard input only for better reliability
+  // Set up scan queue processor
+  useEffect(() => {
+    const queue = currentScanQueue.current;
+    
+    // Set the scan processor to handle the actual scanning logic
+    queue.setScanProcessor(async (barcode: string) => {
+      return new Promise((resolve, reject) => {
+        try {
+          onScan(barcode);
+          resolve({ barcode, processed: true });
+        } catch (error) {
+          if (onError) {
+            onError(error as Error);
+          }
+          reject(error);
+        }
+      });
+    });
+
+    // Subscribe to queue updates if callback provided
+    let unsubscribe: (() => void) | undefined;
+    if (onQueueUpdate) {
+      unsubscribe = queue.onStatusChange(onQueueUpdate);
+    }
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [onScan, onError, onQueueUpdate]);
+
+  // Enhanced barcode scanner with queue support and optimized timing
   useEffect(() => {
     if (!isActive) return;
 
@@ -40,8 +78,8 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
       
       const currentTime = new Date().getTime();
       
-      // If there's a delay between keypresses, start a new barcode
-      if (currentTime - lastKeyTime > 500) { // Reduced timeout for better reliability
+      // Reduced timeout for better reliability - optimized timing
+      if (currentTime - lastKeyTime > 300) { // Reduced from 500ms to 300ms
         barcodeBuffer = '';
       }
       
@@ -50,11 +88,12 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
       
       // Handle Enter key as completion of barcode
       if (e.key === 'Enter' && barcodeBuffer.length >= 4) {
-        try {
-          onScan(barcodeBuffer);
-        } catch (error) {
+        // Add to scan queue instead of processing immediately
+        const scanId = currentScanQueue.current.addScan(barcodeBuffer);
+        if (!scanId) {
+          // Invalid barcode or duplicate - show error through onError callback
           if (onError) {
-            onError(error as Error);
+            onError(new Error(`Invalid or duplicate barcode: ${barcodeBuffer}`));
           }
         }
         barcodeBuffer = '';
@@ -69,13 +108,19 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
         e.preventDefault();
         e.stopPropagation();
         
-        // Process immediately if we have a complete barcode
-        if (barcodeBuffer.length >= 8 && (barcodeBuffer.length === 12 || barcodeBuffer.length === 13 || barcodeBuffer.length === 14)) {
-          try {
-            onScan(barcodeBuffer);
-          } catch (error) {
+        // Process immediately if we have a complete barcode (optimized lengths)
+        if (barcodeBuffer.length >= 8 && (
+          barcodeBuffer.length === 8 ||  // EAN-8
+          barcodeBuffer.length === 12 || // UPC-A
+          barcodeBuffer.length === 13 || // EAN-13
+          barcodeBuffer.length === 14    // GTIN-14
+        )) {
+          // Add to scan queue instead of processing immediately
+          const scanId = currentScanQueue.current.addScan(barcodeBuffer);
+          if (!scanId) {
+            // Invalid barcode or duplicate - show error through onError callback
             if (onError) {
-              onError(error as Error);
+              onError(new Error(`Invalid or duplicate barcode: ${barcodeBuffer}`));
             }
           }
           barcodeBuffer = '';
@@ -90,7 +135,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
     return () => {
       document.removeEventListener('keydown', handleKeyboardInput, true);
     };
-  }, [isActive, onScan, onError]);
+  }, [isActive, onError]);
 
   // This component runs invisibly in background - no UI needed
   return null;

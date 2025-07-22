@@ -6,7 +6,9 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import BarcodeScanner from "./BarcodeScanner";
+import ScanStatusIndicator from "./ScanStatusIndicator";
 import ImageUploader from "./ImageUploader";
+import { ScanQueue, QueuedScan } from "@/utils/scanQueue";
 
 // Define schema for inventory item validation
 const inventoryItemSchema = z.object({
@@ -54,6 +56,16 @@ const EditInventoryItemForm: React.FC<EditInventoryItemFormProps> = ({
   const [scannerActive, setScannerActive] = useState(false);
   const [uploadedImage, setUploadedImage] = useState<string>(item.image || "");
   const [userRole, setUserRole] = useState<string>("Administrator");
+  
+  // Initialize scan queue for inventory edit forms
+  const [scanQueue] = useState(() => new ScanQueue({
+    maxQueueSize: 5, // Smaller queue for edit forms
+    processingDelay: 250, // Slightly slower for product lookups
+    maxRetries: 2,
+    duplicateWindow: 2000 // Longer window to prevent accidental re-scans
+  }));
+  const [queueStatus, setQueueStatus] = useState<QueuedScan[]>([]);
+  
   const { toast } = useToast();
   
   // Get the user role from session storage
@@ -86,13 +98,28 @@ const EditInventoryItemForm: React.FC<EditInventoryItemFormProps> = ({
     }
   });
   
-  // Handle barcode scan result
+  // Handle barcode scan result with enhanced error handling
   const handleBarcodeScan = (result: string) => {
     form.setValue("barcode", result);
     setScannerActive(false);
     toast({
       title: "Barcode Scanned",
       description: `Barcode ${result} has been successfully scanned`,
+    });
+  };
+  
+  // Handle scan queue updates
+  const handleQueueUpdate = (queue: QueuedScan[]) => {
+    setQueueStatus(queue);
+  };
+
+  // Handle scan errors from the scanner
+  const handleScanError = (error: Error) => {
+    toast({
+      title: "Scanner Error",
+      description: error.message,
+      variant: "destructive",
+      duration: 2000,
     });
   };
   
@@ -212,13 +239,26 @@ const EditInventoryItemForm: React.FC<EditInventoryItemFormProps> = ({
               {scannerActive ? 'Disable Scanner' : 'Enable Scanner'}
             </button>
           </div>
+          
+          {/* Scan status indicator */}
+          {scannerActive && (
+            <div className="mb-3">
+              <ScanStatusIndicator 
+                queue={queueStatus}
+                showDetails={true}
+              />
+            </div>
+          )}
+          
           {scannerActive && (
             <div className="mb-4">
               <BarcodeScanner 
                 onScan={handleBarcodeScan}
                 isActive={scannerActive}
-                onError={(error) => console.error('Barcode scan error:', error)}
+                onError={handleScanError}
                 onClose={() => setScannerActive(false)}
+                scanQueue={scanQueue}
+                onQueueUpdate={handleQueueUpdate}
               />
             </div>
           )}

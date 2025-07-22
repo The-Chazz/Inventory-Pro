@@ -1103,12 +1103,12 @@ var ProductCache = class {
 };
 var RateLimiter = class {
   lastCalls = /* @__PURE__ */ new Map();
-  defaultMinInterval = 100;
-  // 100ms general rate limit
+  defaultMinInterval = 50;
+  // Reduced from 100ms to 50ms for better performance
   upcDatabaseInterval = 1e3;
   // 1 second for UPC Database free tier
-  openFoodFactsInterval = 200;
-  // 200ms for Open Food Facts to be respectful
+  openFoodFactsInterval = 100;
+  // Reduced from 200ms to 100ms for Open Food Facts
   async throttle(apiName = "default") {
     const now = Date.now();
     const lastCall = this.lastCalls.get(apiName) || 0;

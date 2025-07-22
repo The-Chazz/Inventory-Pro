@@ -3,12 +3,14 @@ import Header from "@/components/Header";
 import { useAppContext } from "@/context/AppContext";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import InvisibleBarcodeScanner from "@/components/InvisibleBarcodeScanner";
+import ScanStatusIndicator from "@/components/ScanStatusIndicator";
 import { BarcodeFormat } from '@zxing/library';
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import PrintReceipt from "@/components/PrintReceipt";
+import { ScanQueue, QueuedScan } from "@/utils/scanQueue";
 
 // Define types for inventory and cart
 interface InventoryItem {
@@ -41,6 +43,15 @@ const PointOfSale: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   // Scanner is always active in POS section - no manual controls needed
   const isScanning = true;
+  
+  // Initialize scan queue for POS
+  const [scanQueue] = useState(() => new ScanQueue({
+    maxQueueSize: 15, // Allow more scans in queue for busy POS
+    processingDelay: 150, // Optimized delay for POS operations
+    maxRetries: 3,
+    duplicateWindow: 800 // Shorter window for POS to allow re-scanning
+  }));
+  const [queueStatus, setQueueStatus] = useState<QueuedScan[]>([]);
 
   const { toast } = useToast();
 
@@ -77,7 +88,7 @@ const PointOfSale: React.FC = () => {
   const cartTotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   
-  // Handle barcode scan with improved error handling
+  // Handle barcode scan with improved error handling and immediate feedback
   const handleBarcodeScan = (barcode: string) => {
     const item = inventoryItems?.find(item => {
       return item.barcode === barcode || item.sku === barcode;
@@ -85,6 +96,8 @@ const PointOfSale: React.FC = () => {
     
     if (item) {
       addToCart(item);
+      // Immediate dashboard update - trigger refetch
+      refetchInventory();
       toast({
         description: `✅ ${item.name} added to cart`,
         duration: 2000,
@@ -98,48 +111,21 @@ const PointOfSale: React.FC = () => {
     }
   };
 
-  // Improved direct barcode scanner with better reliability
-  useEffect(() => {
-    if (!isScanning) return;
+  // Handle scan queue updates
+  const handleQueueUpdate = (queue: QueuedScan[]) => {
+    setQueueStatus(queue);
+  };
 
-    let scanBuffer = '';
-    let lastKeyTime = 0;
+  // Handle scan errors from the scanner
+  const handleScanError = (error: Error) => {
+    toast({
+      description: `Scanner error: ${error.message}`,
+      variant: "destructive",
+      duration: 2000,
+    });
+  };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-        return;
-      }
-
-      const currentTime = Date.now();
-      // Reduced timeout for better reliability
-      if (currentTime - lastKeyTime > 500) {
-        scanBuffer = '';
-      }
-      lastKeyTime = currentTime;
-
-      if (e.key === 'Enter' && scanBuffer.length >= 4) {
-        handleBarcodeScan(scanBuffer);
-        scanBuffer = '';
-        e.preventDefault();
-        e.stopPropagation();
-      } 
-      else if (/^[a-zA-Z0-9\-]$/.test(e.key)) {
-        scanBuffer += e.key;
-        e.preventDefault();
-        e.stopPropagation();
-
-        // Process barcodes of common lengths automatically
-        if (scanBuffer.length >= 8 && (scanBuffer.length === 12 || scanBuffer.length === 13 || scanBuffer.length === 14)) {
-          handleBarcodeScan(scanBuffer);
-          scanBuffer = '';
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown, true);
-    return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [isScanning, inventoryItems]);
+  // Remove the old direct barcode scanner - now using the enhanced BarcodeScanner component
   
   // Add item to cart - with optimized rendering to prevent screen distortion
   const addToCart = (item: InventoryItem) => {
@@ -302,10 +288,10 @@ const PointOfSale: React.FC = () => {
                   >
                     Refresh
                   </button>
-                  <div className="flex items-center space-x-2 px-3 py-2 rounded-md bg-green-100 text-green-800">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-sm font-medium">Scanner Active</span>
-                  </div>
+                  <ScanStatusIndicator 
+                    queue={queueStatus}
+                    showDetails={false}
+                  />
                 </div>
               </div>
               
@@ -466,7 +452,14 @@ const PointOfSale: React.FC = () => {
         </div>
       </main>
 
-      {/* Direct barcode scanner logic - no separate component */}
+      {/* Enhanced barcode scanner with queue support */}
+      <InvisibleBarcodeScanner 
+        isActive={isScanning}
+        onScan={handleBarcodeScan}
+        scanQueue={scanQueue}
+        onQueueUpdate={handleQueueUpdate}
+        onError={handleScanError}
+      />
 
       {/* Print Receipt Modal */}
       <PrintReceipt 

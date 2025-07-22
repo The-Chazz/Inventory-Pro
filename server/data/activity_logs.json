@@ -824,6 +824,15 @@
       "category": "authentication",
       "details": "User logged in successfully",
       "timestamp": "2025-07-22T00:49:54.406Z"
+    },
+    {
+      "id": 93,
+      "userId": 1,
+      "username": "admin",
+      "action": "User Login",
+      "category": "authentication",
+      "details": "User logged in successfully",
+      "timestamp": "2025-07-22T01:10:03.818Z"
     }
   ]
 }
